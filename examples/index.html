@@ -1,408 +1,702 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<title>three.js examples</title>
-		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-		<link rel="shortcut icon" href="../files/favicon_white.ico" media="(prefers-color-scheme: dark)"/>
-		<link rel="shortcut icon" href="../files/favicon.ico" media="(prefers-color-scheme: light)" />
-		<link rel="stylesheet" type="text/css" href="../files/main.css">
-	</head>
-	<body>
-
-		<div id="panel">
-
-			<div id="header">
-				<h1><a href="https://threejs.org">three.js</a></h1>
-
-				<div id="sections">
-					<span class="selected">examples</span>
-				</div>
-
-				<div id="expandButton"></div>
-			</div>
-
-			<div id="panelScrim"></div>
-
-			<div id="contentWrapper">
-
-				<div id="inputWrapper">
-					<input placeholder="" type="text" id="filterInput" autocorrect="off" autocapitalize="off" spellcheck="false" />
-					<div id="clearSearchButton"></div>
-				</div>
-
-				<div id="content">
-					<img id="previewsToggler" src="./files/thumbnails.svg" width="20" height="20" />
-				</div>
-			</div>
-
-		</div>
-
-		<iframe id="viewer" name="viewer" allow="fullscreen; xr-spatial-tracking;"></iframe>
-
-		<a id="button" target="_blank"><img src="../files/ic_code_black_24dp.svg"></a>
-
-		<script>
-
-		const panel = document.getElementById( 'panel' );
-		const content = document.getElementById( 'content' );
-		const viewer = document.getElementById( 'viewer' );
-		const filterInput = document.getElementById( 'filterInput' );
-		const clearSearchButton = document.getElementById( 'clearSearchButton' );
-		const expandButton = document.getElementById( 'expandButton' );
-		const viewSrcButton = document.getElementById( 'button' );
-		const panelScrim = document.getElementById( 'panelScrim' );
-		const previewsToggler = document.getElementById( 'previewsToggler' );
-
-		const links = {};
-		const validRedirects = new Map();
-		const fragment = document.createDocumentFragment();
-
-		let selected = null;
-
-		init();
-
-		async function init() {
-
-			viewSrcButton.style.display = 'none';
-
-			const files = await ( await fetch( 'files.json' ) ).json();
-			const tags = await ( await fetch( 'tags.json' ) ).json();
-
-			for ( const key in files ) {
-
-				const category = files[ key ];
-
-				const header = document.createElement( 'h2' );
-				header.textContent = key;
-				header.setAttribute( 'data-category', key );
-				fragment.appendChild( header );
-
-				for ( let i = 0; i < category.length; i ++ ) {
-
-					const file = category[ i ];
-
-					const link = createLink( file, tags[ file ] );
-					fragment.appendChild( link );
-
-					links[ file ] = link;
-					validRedirects.set( file, file + '.html' );
-
-				}
-
-			}
-
-			content.appendChild( fragment );
-
-			if ( window.location.hash !== '' ) {
-
-				const file = window.location.hash.substring( 1 );
-
-				// use a predefined map of redirects to avoid untrusted URL redirection due to user-provided value
-
-				if ( validRedirects.has( file ) === true ) {
-
-					selectFile( file );
-					viewer.src = validRedirects.get( file );
-					viewer.style.display = 'unset';
-
-				}
-
-			}
-
-			if ( viewer.src === '' ) {
-
-				viewer.srcdoc = document.getElementById( 'PlaceholderHTML' ).innerHTML;
-				viewer.style.display = 'unset';
-
-			}
-
-			filterInput.value = extractQuery();
-
-			if ( filterInput.value !== '' ) {
-
-				panel.classList.add( 'searchFocused' );
-
-				updateFilter( files, tags );
-
-			}
-
-			// Events
-
-			filterInput.onfocus = function ( ) {
-
-				panel.classList.add( 'searchFocused' );
-
-			};
-
-			filterInput.onblur = function ( ) {
-
-				if ( filterInput.value === '' ) {
-
-					panel.classList.remove( 'searchFocused' );
-
-				}
-
-			};
-
-			clearSearchButton.onclick = function ( ) {
-
-				filterInput.value = '';
-				updateFilter( files, tags );
-				filterInput.focus();
-
-			};
-
-			filterInput.addEventListener( 'input', function () {
-
-				updateFilter( files, tags );
-
-			} );
-
-
-			expandButton.addEventListener( 'click', function ( event ) {
-
-				event.preventDefault();
-				panel.classList.toggle( 'open' );
-
-			} );
-
-			panelScrim.onclick = function ( event ) {
-
-				event.preventDefault();
-				panel.classList.toggle( 'open' );
-
-			};
-
-			previewsToggler.onclick = function ( event ) {
-
-				event.preventDefault();
-				content.classList.toggle( 'minimal' );
-
-			};
-
-			// iOS iframe auto-resize workaround
-
-			if ( /(iPad|iPhone|iPod)/g.test( navigator.userAgent ) ) {
-
-				viewer.style.width = getComputedStyle( viewer ).width;
-				viewer.style.height = getComputedStyle( viewer ).height;
-				viewer.setAttribute( 'scrolling', 'no' );
-
-			}
-
-		}
-
-		function createLink( file, tags ) {
-
-			const external = Array.isArray( tags ) && tags.includes( 'external' ) ? ' <span class="tag">external</span>' : '';
-
-			let href = file + '.html';
-
-			if ( file === 'css3d_mixed' ) {
-
-				href += `?${ new Date().getTime() }`;
-
-			}
-
-			const template = `
-				<div class="card">
-					<a href="${ href }" target="viewer">
-						<div class="cover">
-							<img src="screenshots/${ file }.jpg" loading="lazy" width="400" />
-						</div>
-						<div class="title">${ getName( file ) }${ external }</div>
-					</a>
-				</div>
-			`;
-
-			const link = createElementFromHTML( template );
-
-			link.querySelector( 'a[target="viewer"]' ).addEventListener( 'click', function ( event ) {
-
-				if ( event.button !== 0 || event.ctrlKey || event.altKey || event.metaKey ) return;
-
-				selectFile( file );
-
-			} );
-
-			return link;
-
-		}
-
-		function selectFile( file ) {
-
-			if ( selected !== null ) links[ selected ].classList.remove( 'selected' );
-
-			links[ file ].classList.add( 'selected' );
-
-			window.location.hash = file;
-			viewer.focus();
-			viewer.style.display = 'unset';
-
-			panel.classList.remove( 'open' );
-
-			selected = file;
-
-			// Reveal "View source" button and set attributes to this example
-			viewSrcButton.style.display = '';
-			viewSrcButton.href = 'https://github.com/mrdoob/three.js/blob/master/examples/' + selected + '.html';
-			viewSrcButton.title = 'View source code for ' + getName( selected ) + ' on GitHub';
-
-		}
-
-		function escapeRegExp( string ) {
-
-			string = string.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' ); // https://stackoverflow.com/a/6969486/5250847
-
-			return '(?=.*' + string.split( ' ' ).join( ')(?=.*' ) + ')'; // match all words, in any order
-
-		}
-
-		function updateFilter( files, tags ) {
-
-			let v = filterInput.value.trim();
-			v = v.replace( /\s+/gi, ' ' ); // replace multiple whitespaces with a single one
-
-			if ( v !== '' ) {
-
-				window.history.replaceState( {}, '', '?q=' + v + window.location.hash );
-
-			} else {
-
-				window.history.replaceState( {}, '', window.location.pathname + window.location.hash );
-
-			}
-
-			const exp = new RegExp( escapeRegExp( v ), 'gi' );
-
-			for ( const key in files ) {
-
-				const section = files[ key ];
-
-				for ( let i = 0; i < section.length; i ++ ) {
-
-					filterExample( section[ i ], exp, tags );
-
-				}
-
-			}
-
-			layoutList( files );
-
-		}
-
-		function filterExample( file, exp, tags ) {
-
-			const link = links[ file ];
-			if ( file in tags ) file += ' ' + tags[ file ].join( ' ' );
-			const res = file.replace( /_+/g, ' ' ).match( exp );
-
-			if ( res && res.length > 0 ) {
-
-				link.classList.remove( 'hidden' );
-
-			} else {
-
-				link.classList.add( 'hidden' );
-
-			}
-
-		}
-
-		function getName( file ) {
-
-			const name = file.split( '_' );
-			name.shift();
-			return name.join( ' / ' );
-
-		}
-
-		function layoutList( files ) {
-
-			for ( const key in files ) {
-
-				let collapsed = true;
-
-				const section = files[ key ];
-
-				for ( let i = 0; i < section.length; i ++ ) {
-
-					const file = section[ i ];
-
-					if ( links[ file ].classList.contains( 'hidden' ) === false ) {
-
-						collapsed = false;
-						break;
-
-					}
-
-				}
-
-				const element = document.querySelector( 'h2[data-category="' + key + '"]' );
-
-				if ( collapsed ) {
-
-					element.classList.add( 'hidden' );
-
-				} else {
-
-					element.classList.remove( 'hidden' );
-
-				}
-
-			}
-
-		}
-
-		function extractQuery() {
-
-			const search = window.location.search;
-
-			if ( search.indexOf( '?q=' ) !== - 1 ) {
-
-				return decodeURI( search.slice( 3 ) );
-
-			}
-
-			return '';
-
-		}
-
-		function createElementFromHTML( htmlString ) {
-
-			const div = document.createElement( 'div' );
-			div.innerHTML = htmlString.trim();
-			return div.firstChild;
-
-		}
-
-		</script>
-		<template id="PlaceholderHTML">
-			<!DOCTYPE html>
-				<html lang="en">
-					<head>
-						<meta charset="utf-8">
-						<title>three.js examples</title>
-						<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-						<link rel="stylesheet" type="text/css" href="../files/main.css">
-						<style>
-						html, body {
-							height: 100%;
-						}
-						body {
-							height: 100%;
-							display: flex;
-							align-items: center;
-							justify-content: center;
-							user-select: none;
-						}
-						</style>
-					</head>
-					<body>
-						Select an example from the sidebar
-					</body>
-				</html>
-		</template>
-	</body>
+<head>
+    <title>three.js webgl - geometry - cube</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device.width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <link type="text/css" rel="stylesheet" href="main.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+<body>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "../build/three.module.js",
+                "three/addons/": "./jsm/"
+            }
+        }
+    </script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/20.0.3/tween.umd.js"></script>
+
+    <script type="module">
+
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GUI } from 'https://cdn.jsdelivr.net/npm/dat.gui@0.7.7/build/dat.gui.module.js';
+        import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+        
+        const initialValues = {
+            moveCube: true, 
+            mode: 'Letras',
+            zoom: 5,
+            cubePosition: { x: 0, y: 0.5, z: 0 },
+            cubeRotation: { x: 0, y: 0, z: 0 },
+            fontSize: 50,
+            enableLogs: false,
+            faceTextsSet: [
+                ['MANO', 'BESO', 'ORAL', 'SHOT', 'GB', '?'],
+                ['G', 'H', 'I', 'J', 'K', 'L'],
+                ['M', 'N', 'O', 'P', 'Q', 'R']
+            ],
+            // MODIFICACIÓN 3: Valores por defecto para el Dado 1
+            letterBgColors: ['#FF0000', '#FFFFFF', '#FFFFFF'], // Color de dado rojo
+            letterTextColors: ['#FFFFFF', '#000000', '#000000'], // Color de letra blanco
+            randomColors: [false, true, true], // "Colores Aleatorios" desactivado
+            edgeShows: [false, false, false],
+            edgeColors: ['#000000', '#000000', '#000000'],
+            numDice: 1,
+            animateAll: true,
+            bounciness: 0.6,
+            tossHeight: 4,
+            speed: 1.5,
+            spinIntensity: 8,
+            soundEnabled: false,
+            geometryRadius: 0.15,
+            geometrySegments: 8,
+            materialEdgeGradient: false,
+            axesShow: false,
+            // MODIFICACIÓN 1: Color de plano predefinido
+            planeColor: '#181818',
+            // MODIFICACIÓN 2: Propiedad para el nuevo check
+            colorfulPlane: false
+        };
+        
+        const faceColorOptions = [
+            { faceA: '#ff0000', faceB: '#00ff00', faceC: '#0000ff', faceD: '#ffff00', faceE: '#ff00ff', faceF: '#00ffff' },
+            { faceA: '#ff0000', faceB: '#00ff00', faceC: '#0000ff', faceD: '#ffff00', faceE: '#ff00ff', faceF: '#00ffff' },
+            { faceA: '#ff0000', faceB: '#00ff00', faceC: '#0000ff', faceD: '#ffff00', faceE: '#ff00ff', faceF: '#00ffff' }
+        ];
+
+        let camera, scene, renderer, controls, plane;
+        let diceMeshes = [];
+        let geometry;
+        let axesHelper;
+        let enableLogs = initialValues.enableLogs;
+        let isCubeMoving = initialValues.moveCube;
+        
+        let materialOptions; 
+        
+        let mainCubeFolder, gui;
+        let perDieFolders = [];
+        let transformControls = []; 
+        let allFaceTextInputControls = [];
+        let allFaceColorControls = [];
+        
+        let fontSizeControl;
+        let degradadoControl;
+        
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+        let isAnimating = false;
+        let animationsInProgress = 0;
+        let activateRotationControl; 
+        
+        let edgeColorTween = null;
+        let currentFaceColors = Array(6).fill(initialValues.letterBgColors[0]);
+        
+        // MODIFICACIÓN 2: Variable para la animación del plano
+        let time = 0;
+
+        const textureLoader = new THREE.TextureLoader();
+        const soundToss = new Audio('sounds/toss.mp3');
+        const soundImpact = new Audio('sounds/impact.mp3');
+
+        init();
+        animate();
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(-2, 4.0341, 2.1);
+            scene.background = new THREE.Color(0x000000);
+
+            axesHelper = new THREE.AxesHelper(5);
+            axesHelper.visible = initialValues.axesShow;
+            scene.add(axesHelper);
+
+            const planeGeometry = new THREE.PlaneGeometry(20, 20);
+            const planeMaterial = new THREE.MeshBasicMaterial({ color: initialValues.planeColor, side: THREE.DoubleSide });
+            plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            plane.rotation.x = -Math.PI / 2;
+            plane.position.y = 0;
+            scene.add(plane);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enabled = false;
+            
+            setupGUI();
+
+            createDice(initialValues.numDice);
+            rebuildDiceSpecificControls();
+
+            window.addEventListener('resize', onWindowResize);
+            renderer.domElement.addEventListener('click', onCubeClick, false);
+        }
+
+        // ... (El resto del código desde createDice hasta antes de setupGUI permanece igual)
+        function createDice(count) {
+            diceMeshes.forEach(d => {
+                d.traverse(child => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                         if (Array.isArray(child.material)) {
+                            child.material.forEach(m => m.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
+                    }
+                });
+                scene.remove(d);
+            });
+            diceMeshes = [];
+
+            geometry = new RoundedBoxGeometry(1, 1, 1, Math.floor(initialValues.geometrySegments), initialValues.geometryRadius);
+
+            for (let i = 0; i < count; i++) {
+                const mesh = new THREE.Mesh(geometry);
+                mesh.isRolling = false;
+                
+                mesh.position.set(
+                    (i - (count - 1) / 2) * 2,
+                    initialValues.cubePosition.y,
+                    initialValues.cubePosition.z
+                );
+                mesh.rotation.set(initialValues.cubeRotation.x, initialValues.cubeRotation.y, initialValues.cubeRotation.z);
+                
+                const edgesGeometry = new THREE.EdgesGeometry(geometry);
+                const edgesMaterial = new THREE.LineBasicMaterial({ color: initialValues.edgeColors[i], linewidth: 2 });
+                const edgesMesh = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+                edgesMesh.visible = initialValues.edgeShows[i];
+                mesh.add(edgesMesh);
+
+                const shaderGeometry = geometry.clone();
+                addBarycentricCoordinates(shaderGeometry);
+
+                const shaderMaterial = new THREE.ShaderMaterial({
+                    vertexShader: `
+                        attribute vec3 barycentric;
+                        varying vec3 vBarycentric;
+                        void main() {
+                            vBarycentric = barycentric;
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+                        varying vec3 vBarycentric;
+                        uniform vec3 u_edgeColor;
+                        uniform float u_time;
+                        void main() {
+                            float pulse = sin(u_time * 2.0) * 0.5 + 0.5;
+                            float thickness = 0.02 + pulse * 0.02; 
+                            float softness = 0.02 + pulse * 0.02;
+                            float edgeFactor = min(min(vBarycentric.x, vBarycentric.y), vBarycentric.z);
+                            float alpha = smoothstep(thickness - softness, thickness + softness, edgeFactor);
+                            if (alpha < 0.01) { discard; }
+                            gl_FragColor = vec4(u_edgeColor, alpha);
+                        }
+                    `,
+                    uniforms: {
+                        u_edgeColor: { value: new THREE.Color(initialValues.edgeColors[i]) },
+                        u_time: { value: 0.0 }
+                    },
+                    transparent: true
+                });
+                const shaderEdgesMesh = new THREE.Mesh(shaderGeometry, shaderMaterial);
+                shaderEdgesMesh.visible = false;
+                mesh.add(shaderEdgesMesh);
+                
+                diceMeshes.push(mesh);
+                scene.add(mesh);
+            }
+            
+            updateMaterial(materialOptions ? materialOptions.mode : initialValues.mode);
+        }
+        
+        function addBarycentricCoordinates(geometry) {
+            const position = geometry.attributes.position;
+            const count = position.count;
+            const barycentric = new Float32Array(count * 3);
+            for (let i = 0; i < count; i += 3) {
+                barycentric[i * 3 + 0] = 1; barycentric[i * 3 + 1] = 0; barycentric[i * 3 + 2] = 0;
+                barycentric[(i + 1) * 3 + 0] = 0; barycentric[(i + 1) * 3 + 1] = 1; barycentric[(i + 1) * 3 + 2] = 0;
+                barycentric[(i + 2) * 3 + 0] = 0; barycentric[(i + 2) * 3 + 1] = 0; barycentric[(i + 2) * 3 + 2] = 1;
+            }
+            geometry.setAttribute('barycentric', new THREE.BufferAttribute(barycentric, 3));
+        }
+
+        function updateGeometry() {
+            createDice(initialValues.numDice);
+            rebuildDiceSpecificControls();
+        }
+        
+        function createTextTexture(text, fontSize, bgColor, textColor) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const size = 256;
+            canvas.width = size; canvas.height = size;
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, size, size);
+            ctx.font = `bold ${fontSize}px Arial`;
+            ctx.fillStyle = textColor;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(text, size / 2, size / 2);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function createDiceCanvasTexture(imagePath, color, callback) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const size = 256;
+            canvas.width = size;
+            canvas.height = size;
+            ctx.fillStyle = color;
+            ctx.fillRect(0, 0, size, size);
+            textureLoader.load(imagePath, (texture) => {
+                ctx.drawImage(texture.image, 0, 0, size, size);
+                callback(new THREE.CanvasTexture(canvas));
+            });
+        }
+
+        function getRandomHexColor() {
+            return '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0').toUpperCase();
+        }
+
+        function getContrastColor(hex) {
+            const r = parseInt(hex.substr(1, 2), 16) / 255;
+            const g = parseInt(hex.substr(3, 2), 16) / 255;
+            const b = parseInt(hex.substr(5, 2), 16) / 255;
+            const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+            return luminance > 0.5 ? '#000000' : '#FFFFFF';
+        }
+
+        function rebuildDiceSpecificControls() {
+            transformControls.forEach(c => c.remove());
+            transformControls = [];
+
+            for(let i=0; i < diceMeshes.length; i++) {
+                const dieFolder = perDieFolders[i];
+                if (dieFolder && diceMeshes[i]) {
+                    const die = diceMeshes[i];
+                    const rotX = dieFolder.add(die.rotation, 'x', 0, Math.PI * 2).name('Rotación X').listen();
+                    const rotY = dieFolder.add(die.rotation, 'y', 0, Math.PI * 2).name('Rotación Y').listen();
+                    const rotZ = dieFolder.add(die.rotation, 'z', 0, Math.PI * 2).name('Rotación Z').listen();
+                    const posX = dieFolder.add(die.position, 'x', -10, 10).name('Mover X').listen();
+                    const posY = dieFolder.add(die.position, 'y', -10, 10).name('Mover Y').listen();
+                    const posZ = dieFolder.add(die.position, 'z', -10, 10).name('Mover Z').listen();
+                    transformControls.push(rotX, rotY, rotZ, posX, posY, posZ);
+                }
+            }
+        }
+
+        function setupGUI() {
+            gui = new GUI();
+
+            const titleElement = document.createElement('div');
+            titleElement.textContent = 'DICE';
+            titleElement.style.color = '#eee';
+            titleElement.style.backgroundColor = '#000';
+            titleElement.style.padding = '10px 15px';
+            titleElement.style.fontWeight = 'bold';
+            titleElement.style.fontSize = '1em';
+            titleElement.style.letterSpacing = '0.1em';
+            gui.domElement.prepend(titleElement);
+
+            const generalFolder = gui.addFolder('General');
+            const planeCameraFolder = gui.addFolder('Controles del Plano y Cámara');
+            mainCubeFolder = gui.addFolder('Controles Globales del Dado');
+            
+            generalFolder.add(initialValues, 'numDice', [1, 2, 3]).name('Numero de Dados').onChange(value => {
+                const num = parseInt(value);
+                createDice(num);
+                rebuildDiceSpecificControls();
+                updateFolderVisibility(num);
+                switch (num) {
+                    case 1: camera.position.set(-2, 4.0341, 2.1); break;
+                    case 2: camera.position.set(-2, 4.1687, 1.8); break;
+                    case 3: camera.position.set(-2, 4.4253, -0.5); break;
+                }
+            });
+            generalFolder.add(initialValues, 'soundEnabled').name('Activar Sonido');
+            generalFolder.add({ reset: resetCube }, 'reset').name('Resetear Todo');
+            generalFolder.add(initialValues, 'enableLogs').name('Activar Logs').onChange(value => enableLogs = value);
+            
+            planeCameraFolder.add(initialValues, 'axesShow').name('Mostrar Ejes').onChange(toggleAxes);
+            const controlsOptions = { enableControls: false };
+            planeCameraFolder.add(controlsOptions, 'enableControls').name('Habilitar Controles').onChange(toggleControls);
+            planeCameraFolder.add(camera.position, 'x', -20, 20).name('Cámara Posición X').listen();
+            planeCameraFolder.add(camera.position, 'y', -20, 20).name('Cámara Posición Y').listen();
+            planeCameraFolder.add(camera.position, 'z', -20, 20).name('Cámara Posición Z (Zoom)').listen();
+            planeCameraFolder.add(plane.position, 'x', -10, 10).name('Plano Mover X').listen();
+            planeCameraFolder.add(plane.position, 'y', -10, 10).name('Plano Mover Y').listen();
+            planeCameraFolder.add(plane.position, 'z', -10, 10).name('Plano Mover Z').listen();
+            planeCameraFolder.add(plane.rotation, 'x', -Math.PI, Math.PI).name('Plano Rotación X').listen();
+            planeCameraFolder.add(plane.rotation, 'y', -Math.PI, Math.PI).name('Plano Rotación Y').listen();
+            planeCameraFolder.add(plane.rotation, 'z', -Math.PI, Math.PI).name('Plano Rotación Z').listen();
+            
+            // MODIFICACIÓN 2: Guardar referencia al control de color y añadir el nuevo checkbox
+            const planeColorControl = planeCameraFolder.addColor(initialValues, 'planeColor').name('Color del plano').onChange(value => {
+                plane.material.color.set(value);
+            });
+
+            planeCameraFolder.add(initialValues, 'colorfulPlane').name('Plano Colorido').onChange(value => {
+                if (value) {
+                    planeColorControl.domElement.style.pointerEvents = 'none';
+                    planeColorControl.domElement.style.opacity = 0.5;
+                } else {
+                    planeColorControl.domElement.style.pointerEvents = 'auto';
+                    planeColorControl.domElement.style.opacity = 1;
+                    plane.material.color.set(initialValues.planeColor);
+                }
+            });
+
+            materialOptions = { mode: initialValues.mode };
+            mainCubeFolder.add(materialOptions, 'mode', ['Textura', 'Wireframe', 'Color', 'Letras', 'Caras']).name('Modo de Material').onChange(manageControlsVisibility);
+            mainCubeFolder.add(initialValues, 'animateAll').name('Animar Todo');
+            activateRotationControl = mainCubeFolder.add(initialValues, 'moveCube').name('Activar Rotación Auto.').onChange((value) => { isCubeMoving = value; });
+            
+            fontSizeControl = mainCubeFolder.add(initialValues, 'fontSize', 50, 200).name('Tamaño de la letra').step(1).onChange(() => updateMaterial(materialOptions.mode));
+
+            mainCubeFolder.add(initialValues, 'bounciness', 0, 1).name('Rebote (Bounciness)').step(0.01);
+            mainCubeFolder.add(initialValues, 'tossHeight', 1, 10).name('Altura Lanzamiento');
+            mainCubeFolder.add(initialValues, 'speed', 0.5, 2).name('Velocidad');
+            mainCubeFolder.add(initialValues, 'spinIntensity', 0, 20).name('Intensidad de Giro');
+            mainCubeFolder.add(initialValues, 'geometryRadius', 0, 0.5).name('Curvatura (Radio)').step(0.01).onFinishChange(updateGeometry);
+            mainCubeFolder.add(initialValues, 'geometrySegments', 1, 20).name('Suavidad (Segmentos)').step(1).onFinishChange(updateGeometry);
+            
+            degradadoControl = mainCubeFolder.add(initialValues, 'materialEdgeGradient').name('Degradado').onChange(value => {
+                diceMeshes.forEach(die => {
+                    const shaderEdgesMesh = die.children.find(c => c.material instanceof THREE.ShaderMaterial);
+                    if (shaderEdgesMesh) shaderEdgesMesh.visible = value;
+                });
+            });
+
+            for (let i = 0; i < 3; i++) {
+                const dieFolder = gui.addFolder(`Controles del Dado ${i + 1}`);
+                const dieTextInputControls = [];
+                const dieFaceColorControls = [];
+
+                const randomColorsControl = dieFolder.add(initialValues.randomColors, i).name('Colores Aleatorios').onChange((value) => {
+                      const mode = materialOptions.mode;
+                      if (mode === 'Letras' || mode === 'Caras') {
+                          letterBgColorControl.domElement.style.pointerEvents = value ? 'none' : 'auto';
+                          letterBgColorControl.domElement.style.opacity = value ? 0.5 : 1;
+                          if (mode === 'Letras') {
+                             letterTextColorControl.domElement.style.pointerEvents = value ? 'none' : 'auto';
+                             letterTextColorControl.domElement.style.opacity = value ? 0.5 : 1;
+                          }
+                      } else if (mode === 'Color') {
+                          dieFaceColorControls.forEach(c => {
+                              c.domElement.style.pointerEvents = value ? 'none' : 'auto';
+                              c.domElement.style.opacity = value ? 0.5 : 1;
+                          });
+                      }
+                      updateMaterial(mode);
+                });
+                
+                const letterBgColorControl = dieFolder.addColor(initialValues.letterBgColors, i).name('Color del dado').onChange(() => updateMaterial(materialOptions.mode));
+                const letterTextColorControl = dieFolder.addColor(initialValues.letterTextColors, i).name('Color de Letra').onChange(() => updateMaterial(materialOptions.mode));
+                
+                initialValues.faceTextsSet[i].forEach((text, faceIndex) => {
+                    const control = dieFolder.add(initialValues.faceTextsSet[i], faceIndex).name(`Texto ${String.fromCharCode(65 + faceIndex)}`).listen().onChange(() => updateMaterial(materialOptions.mode)).onFinishChange((value) => { initialValues.faceTextsSet[i][faceIndex] = value.substring(0, 6).toUpperCase(); updateMaterial(materialOptions.mode); });
+                    control.domElement.querySelector('input').setAttribute('maxlength', '6');
+                    dieTextInputControls.push(control);
+                });
+                allFaceTextInputControls.push(dieTextInputControls);
+                
+                Object.keys(faceColorOptions[i]).forEach((key, faceIndex) => {
+                    const control = dieFolder.addColor(faceColorOptions[i], key).name(`Cara ${String.fromCharCode(65 + faceIndex)}`).onChange(() => updateMaterial('Color'));
+                    dieFaceColorControls.push(control);
+                });
+                allFaceColorControls.push(dieFaceColorControls);
+
+                const edgeShowControl = dieFolder.add(initialValues.edgeShows, i).name('Mostrar Contorno').onChange((value) => {
+                    if (diceMeshes[i]) {
+                        const edgesMesh = diceMeshes[i].children.find(c => c instanceof THREE.LineSegments);
+                        if (edgesMesh) edgesMesh.visible = value;
+                    }
+                    colorContornoControl.domElement.style.display = value ? '' : 'none';
+                });
+
+                const colorContornoControl = dieFolder.addColor(initialValues.edgeColors, i).name('Color Contorno').onChange((value) => {
+                    if (diceMeshes[i]) {
+                        const die = diceMeshes[i];
+                        const edgesMesh = die.children.find(c => c instanceof THREE.LineSegments);
+                        const shaderEdgesMesh = die.children.find(c => c.material instanceof THREE.ShaderMaterial);
+                        if (edgesMesh) edgesMesh.material.color.set(value);
+                        if (shaderEdgesMesh) shaderEdgesMesh.material.uniforms.u_edgeColor.value.set(value);
+                    }
+                });
+
+                colorContornoControl.domElement.style.display = initialValues.edgeShows[i] ? '' : 'none';
+
+                perDieFolders.push(dieFolder);
+            }
+
+            function updateFolderVisibility(numDice) {
+                for (let i = 0; i < 3; i++) {
+                    const show = i < numDice;
+                    perDieFolders[i].domElement.style.display = show ? '' : 'none';
+                }
+            }
+
+            generalFolder.close();
+            planeCameraFolder.close();
+            mainCubeFolder.close();
+            perDieFolders.forEach(f => f.close());
+            
+            updateFolderVisibility(initialValues.numDice);
+            manageControlsVisibility(initialValues.mode);
+        }
+
+        // ... (El resto del código desde manageControlsVisibility hasta antes de animate permanece igual)
+        function manageControlsVisibility(value) {
+            materialOptions.mode = value;
+            const showLetterControls = value === 'Letras';
+            const showColorControls = value === 'Color';
+            
+            // Lógica de visibilidad para controles globales
+            fontSizeControl.domElement.style.display = showLetterControls ? '' : 'none';
+            degradadoControl.domElement.style.display = (showLetterControls || showColorControls) ? '' : 'none';
+
+            // Lógica de visibilidad para controles dentro de cada carpeta de dado
+            perDieFolders.forEach((folder, i) => {
+                const textInputs = allFaceTextInputControls[i];
+                const faceColors = allFaceColorControls[i];
+                
+                // Mostrar/ocultar cajas de texto
+                textInputs.forEach(c => c.domElement.style.display = showLetterControls ? '' : 'none');
+                
+                // Mostrar/ocultar selectores de color de cara
+                faceColors.forEach(c => c.domElement.style.display = showColorControls ? '' : 'none');
+
+                const randomColorCheckbox = folder.__controllers.find(c => c.property === 'Colores Aleatorios');
+                const bgColorPicker = folder.__controllers.find(c => c.property === 'Color del dado');
+                const textColorPicker = folder.__controllers.find(c => c.property === 'Color de Letra');
+
+                if(randomColorCheckbox) randomColorCheckbox.domElement.style.display = (value === 'Letras' || value === 'Color' || value === 'Caras') ? '' : 'none';
+                if(bgColorPicker) bgColorPicker.domElement.style.display = (value === 'Letras' || value === 'Caras') ? '' : 'none';
+                if(textColorPicker) textColorPicker.domElement.style.display = (value === 'Letras') ? '' : 'none';
+            });
+            
+            updateMaterial(value);
+        }
+        
+        function onCubeClick(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            
+            const intersects = raycaster.intersectObjects(diceMeshes);
+
+            if (intersects.length > 0) {
+                if (initialValues.animateAll) {
+                    if (isAnimating) return;
+
+                    isAnimating = true;
+                    isCubeMoving = false;
+                    if (activateRotationControl) { activateRotationControl.setValue(false); activateRotationControl.updateDisplay(); }
+                    
+                    animationsInProgress = diceMeshes.length;
+                    diceMeshes.forEach(die => rollDice(die));
+
+                } else {
+                    const clickedDie = intersects[0].object;
+                    if (clickedDie.isRolling) return;
+
+                    isCubeMoving = false;
+                    if (activateRotationControl) { activateRotationControl.setValue(false); activateRotationControl.updateDisplay(); }
+                    
+                    rollDice(clickedDie);
+                }
+            }
+        }
+        
+        function rollDice(dieToRoll) { 
+            dieToRoll.isRolling = true;
+
+            if (initialValues.soundEnabled) {
+                try { soundToss.play(); } catch(e) { console.warn("No se pudo reproducir el sonido de lanzamiento."); }
+            }
+
+            const targetRotations = [ { x: 0, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: Math.PI, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: -Math.PI / 2, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: Math.PI / 2, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: 0, y: Math.PI * Math.round(Math.random() * 4), z: Math.PI / 2 }, { x: 0, y: Math.PI * Math.round(Math.random() * 4), z: -Math.PI / 2 } ]; 
+            const finalRotation = targetRotations[Math.floor(Math.random() * targetRotations.length)]; 
+            
+            const tossHeight = initialValues.tossHeight * (1 + (Math.random() - 0.5) * 0.2);
+            const totalDuration = ((1200 + initialValues.bounciness * 800) / initialValues.speed) * (1 + (Math.random() - 0.5) * 0.2);
+            const spin = initialValues.spinIntensity * (1 + (Math.random() - 0.5) * 0.4);
+
+            const tossUp = new TWEEN.Tween(dieToRoll.position).to({ y: tossHeight }, totalDuration * 0.3).easing(TWEEN.Easing.Quadratic.Out); 
+            const randomRotation = new TWEEN.Tween(dieToRoll.rotation).to({
+                x: dieToRoll.rotation.x + (Math.random() * spin - spin/2) * Math.PI, 
+                y: dieToRoll.rotation.y + (Math.random() * spin - spin/2) * Math.PI, 
+                z: dieToRoll.rotation.z + (Math.random() * spin - spin/2) * Math.PI
+            }, totalDuration).easing(TWEEN.Easing.Linear.None); 
+            
+            const finalSettleRotation = new TWEEN.Tween(dieToRoll.rotation).to(finalRotation, totalDuration * 0.7).easing(TWEEN.Easing.Quadratic.InOut); 
+            
+            let fallAndBounce = new TWEEN.Tween(dieToRoll.position).to({y: 0.5}, totalDuration * 0.15).easing(TWEEN.Easing.Quadratic.In)
+                .onStart(() => {
+                    if (initialValues.soundEnabled) {
+                        try { soundImpact.play(); } catch(e) { console.warn("No se pudo reproducir el sonido de impacto."); }
+                    }
+                });
+
+            let lastBounceTween = fallAndBounce; 
+            let numBounces = Math.round(initialValues.bounciness * 4); 
+            let currentBounceHeight = tossHeight * 0.4 * initialValues.bounciness; 
+            for (let i = 0; i < numBounces; i++) { 
+                if (currentBounceHeight < 0.1) break; 
+                const bounceUp = new TWEEN.Tween(dieToRoll.position).to({ y: 0.5 + currentBounceHeight }, totalDuration * 0.15 / (i + 1)).easing(TWEEN.Easing.Quadratic.Out); 
+                const bounceDown = new TWEEN.Tween(dieToRoll.position).to({ y: 0.5 }, totalDuration * 0.15 / (i + 1)).easing(TWEEN.Easing.Quadratic.In); 
+                lastBounceTween.chain(bounceUp); 
+                bounceUp.chain(bounceDown); 
+                lastBounceTween = bounceDown; 
+                currentBounceHeight *= 0.5; 
+            } 
+            
+            lastBounceTween.onComplete(() => { 
+                dieToRoll.isRolling = false;
+
+                if (initialValues.animateAll) {
+                    animationsInProgress--;
+                    if (animationsInProgress === 0) {
+                        isAnimating = false;
+                    }
+                }
+            }); 
+
+            tossUp.chain(fallAndBounce); 
+            tossUp.start(); 
+            randomRotation.start(); 
+            tossUp.onComplete(() => finalSettleRotation.start()); 
+        }
+
+        function resetCube() {
+            diceMeshes.forEach((die, i) => {
+                const count = diceMeshes.length;
+                die.rotation.set(initialValues.cubeRotation.x, initialValues.cubeRotation.y, initialValues.cubeRotation.z);
+                die.position.set(
+                    (i - (count - 1) / 2) * 2,
+                    initialValues.cubePosition.y,
+                    initialValues.cubePosition.z
+                );
+            });
+            
+            plane.position.set(0, 0, 0);
+            plane.rotation.set(-Math.PI / 2, 0, 0);
+
+            camera.position.set(-2, 4.0341, 2.1);
+        }
+        
+        function updateMaterial(mode) { 
+            if (diceMeshes.length === 0) return;
+
+            diceMeshes.forEach((die, dieIndex) => {
+                 if (mode === 'Wireframe') { 
+                    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true }); 
+                    die.material = material;
+                } else if (mode === 'Color') {
+                    let faceColors;
+                    if (initialValues.randomColors[dieIndex]) {
+                        faceColors = Array.from({length: 6}, () => getRandomHexColor());
+                    } else {
+                        faceColors = Object.values(faceColorOptions[dieIndex]);
+                    }
+                    if (dieIndex === 0) currentFaceColors = [...faceColors];
+                    const materials = faceColors.map(c => new THREE.MeshBasicMaterial({ color: c }));
+                    die.material = materials;
+                } else if (mode === 'Letras') { 
+                    const currentFaceTexts = initialValues.faceTextsSet[dieIndex];
+                    const faceTextures = currentFaceTexts.map((text, faceIndex) => { 
+                        let bgColor = initialValues.letterBgColors[dieIndex]; 
+                        let textColor = initialValues.letterTextColors[dieIndex]; 
+                        if (initialValues.randomColors[dieIndex]) { 
+                            bgColor = getRandomHexColor(); 
+                            textColor = getContrastColor(bgColor); 
+                        } 
+                        if (dieIndex === 0) currentFaceColors[faceIndex] = bgColor;
+                        return createTextTexture(text, initialValues.fontSize, bgColor, textColor); 
+                    }); 
+                    die.material = faceTextures.map(tex => new THREE.MeshBasicMaterial({ map: tex })); 
+                } else if (mode === 'Caras') {
+                    const faceTexturesPaths = [
+                        'textures/dice1.png', 'textures/dice2.png', 'textures/dice3.png',
+                        'textures/dice4.png', 'textures/dice5.png', 'textures/dice6.png'
+                    ];
+                    const dieMaterials = [];
+                    die.material = dieMaterials;
+                    let loadedCount = 0;
+                    faceTexturesPaths.forEach((path, index) => {
+                        const bgColor = initialValues.randomColors[dieIndex] ? getRandomHexColor() : initialValues.letterBgColors[dieIndex];
+                        createDiceCanvasTexture(path, bgColor, (canvasTexture) => {
+          _BColorSpace = THREE.SRGBColorSpace;
+                            const material = new THREE.MeshBasicMaterial({ map: canvasTexture });
+                            dieMaterials[index] = material;
+                            loadedCount++;
+                            if (loadedCount === 6) { die.material = dieMaterials; }
+                        });
+                    });
+                } else {
+                    const texture = textureLoader.load('textures/crate.gif');
+                    texture.colorSpace = THREE.SRGBColorSpace;
+                    const material = new THREE.MeshBasicMaterial({ map: texture }); 
+                    die.material = material;
+                } 
+            });
+        }
+        
+        function toggleAxes(value) { axesHelper.visible = value; }
+        function toggleControls(value) { controls.enabled = value; }
+        function onWindowResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }
+        
+        function animate() { 
+            requestAnimationFrame(animate); 
+            TWEEN.update(); 
+            
+            // MODIFICACIÓN 2: Lógica de animación para el plano colorido
+            if (initialValues.colorfulPlane) {
+                time += 0.01;
+                const r = Math.sin(time * 0.5) * 0.5 + 0.5; // Oscila entre 0 y 1
+                const g = Math.cos(time * 0.3) * 0.5 + 0.5; // Oscila entre 0 y 1
+                const b = Math.sin(time * 0.7) * 0.5 + 0.5; // Oscila entre 0 y 1
+                plane.material.color.setRGB(r, g, b);
+            }
+
+            diceMeshes.forEach(die => {
+                const shaderEdgesMesh = die.children.find(c => c.material instanceof THREE.ShaderMaterial);
+                if (shaderEdgesMesh && shaderEdgesMesh.visible) {
+                    shaderEdgesMesh.material.uniforms.u_time.value += 0.02;
+                }
+            });
+
+            if (isCubeMoving && !isAnimating) {
+                diceMeshes.forEach(die => {
+                    die.rotation.y += 0.04;
+                });
+            } 
+            controls.update(); 
+            renderer.render(scene, camera); 
+        }
+
+                // --- CÓDIGO DE REGISTRO A AÑADIR AQUÍ ---
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+              .then(registration => {
+                console.log('Service Worker registrado con éxito:', registration.scope);
+              })
+              .catch(error => {
+                console.log('Fallo en el registro del Service Worker:', error);
+              });
+          });
+        }
+
+    </script>
+</body>
 </html>

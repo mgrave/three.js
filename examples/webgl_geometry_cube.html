@@ -1,326 +1,275 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<title>three.js webgl - geometry - cube</title>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device.width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-	<link type="text/css" rel="stylesheet" href="main.css">
+    <title>three.js webgl - geometry - cube</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device.width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <link type="text/css" rel="stylesheet" href="main.css">
 </head>
 <body>
-	<script type="importmap">
-		{
-			"imports": {
-				"three": "../build/three.module.js",
-				"three/addons/": "./jsm/"
-			}
-		}
-	</script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "../build/three.module.js",
+                "three/addons/": "./jsm/"
+            }
+        }
+    </script>
 
-	<script type="module">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/20.0.3/tween.umd.js"></script>
 
-		import * as THREE from 'three';
-		import { OrbitControls } from 'three/addons/controls/OrbitControls.js'; // Importación de OrbitControls
-		import { GUI } from 'https://cdn.jsdelivr.net/npm/dat.gui@0.7.7/build/dat.gui.module.js'; // Agregar la librería dat.GUI
+    <script type="module">
 
-		// Valores iniciales definidos en un solo lugar
-		const initialValues = {
-			mode: 'Letras', // El valor predeterminado del modo
-			moveCube: true, // Estado del movimiento del cubo
-			showLetters: true, // Mostrar letras por defecto
-			zoom: 5, // Valor inicial del zoom de la cámara
-			cubePosition: { x: 0, y: 1, z: 0 }, // Posición inicial del cubo
-			cubeRotation: { x: 0, y: 0, z: 0 }, // Rotación inicial del cubo
-			fontSize: 50, // Tamaño de la letra predeterminado
-			enableLogs: false // Control de logs desactivado por defecto
-		};
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GUI } from 'https://cdn.jsdelivr.net/npm/dat.gui@0.7.7/build/dat.gui.module.js';
+        import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+        
+        const edgeOptions = {
+            show: true,
+            color: '#000000'
+        };
 
-		let camera, scene, renderer, controls;
-		let mesh;
-		let axesHelper;
-		let enableLogs = initialValues.enableLogs; // Activar o desactivar los logs
-		let isCubeMoving = initialValues.moveCube; // Controlar si el cubo se mueve o no
+        const geometryOptions = {
+            radius: 0.1,
+            segments: 8
+        };
 
-		init();
+        const initialValues = {
+            moveCube: true, 
+            mode: 'Letras',
+            zoom: 5,
+            cubePosition: { x: 0, y: 0.5, z: 0 },
+            cubeRotation: { x: 0, y: 0, z: 0 },
+            fontSize: 50,
+            enableLogs: false,
+            faceTexts: ['A', 'B', 'C', 'D', 'E', 'F'],
+            letterBgColor: '#FFFFFF',
+            letterTextColor: '#000000',
+            randomColors: false
+        };
 
-		function init() {
-			console.log("🚀 Iniciando la escena de THREE.js... Vamos allá!");
+        let camera, scene, renderer, controls;
+        let mesh, geometry, texture;
+        let axesHelper;
+        let edgesMesh; 
+        let enableLogs = initialValues.enableLogs;
+        let isCubeMoving = initialValues.moveCube;
 
-			// Escena y cámara
-			scene = new THREE.Scene();
-			camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
-			camera.position.z = initialValues.zoom;
-			console.log("🔮 Cámara creada y posicionada en el eje Z: ", camera.position.z);
+        // MODIFICADO: Se declara aquí para que sea accesible globalmente.
+        let materialOptions; 
 
-			// Fondo negro
-			scene.background = new THREE.Color(0x000000);
-			console.log("🌑 Fondo de la escena configurado a negro.");
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let isAnimating = false;
 
-			// Textura del cubo
-			const texture = new THREE.TextureLoader().load('textures/crate.gif');
-			texture.colorSpace = THREE.SRGBColorSpace;
-			console.log("🖼️ Cargando la textura 'crate.gif'... Textura cargada: ", texture);
+        const diceOptions = {
+            bounciness: 0.6
+        };
+        
+        let activateRotationControl; 
+        let faceTextInputControls = [];
+        let letterBgColorControl, letterTextColorControl, randomColorsControl;
 
-			// Geometría del cubo (usando BufferGeometry)
-			const geometry = new THREE.BoxGeometry();
-			console.log("🔳 Geometría del cubo (BoxGeometry) creada.");
+        init();
+        animate();
 
-			// Función para crear una textura con texto
-			function createTextTexture(text, fontSize) {
-				const canvas = document.createElement('canvas');
-				const ctx = canvas.getContext('2d');
-				const size = 256;
-				canvas.width = size;
-				canvas.height = size;
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.z = initialValues.zoom;
+            scene.background = new THREE.Color(0x000000);
 
-				ctx.fillStyle = 'white';
-				ctx.fillRect(0, 0, size, size);
+            texture = new THREE.TextureLoader().load('textures/crate.gif');
+            texture.colorSpace = THREE.SRGBColorSpace;
 
-				ctx.font = `bold ${fontSize}px Arial`;
-				ctx.fillStyle = 'black';
-				ctx.textAlign = 'center';
-				ctx.textBaseline = 'middle';
-				ctx.fillText(text, size / 2, size / 2);
+            geometry = new RoundedBoxGeometry(1, 1, 1, geometryOptions.segments, geometryOptions.radius);
 
-				const texture = new THREE.CanvasTexture(canvas);
-				texture.minFilter = THREE.LinearFilter;
-				texture.wrapS = THREE.ClampToEdgeWrapping;
-				texture.wrapT = THREE.ClampToEdgeWrapping;
-				texture.needsUpdate = true;
+            mesh = new THREE.Mesh(geometry);
+            mesh.position.set(initialValues.cubePosition.x, initialValues.cubePosition.y, initialValues.cubePosition.z);
+            mesh.rotation.set(initialValues.cubeRotation.x, initialValues.cubeRotation.y, initialValues.cubeRotation.z);
+            scene.add(mesh);
 
-				return texture;
-			}
+            const edgesGeometry = new THREE.EdgesGeometry(geometry);
+            const edgesMaterial = new THREE.LineBasicMaterial({ color: edgeOptions.color, linewidth: 2 });
+            edgesMesh = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+            mesh.add(edgesMesh);
 
-			// Crear las texturas para cada cara
-			const faceTextures = [
-				createTextTexture('A', initialValues.fontSize), // Cara frontal
-				createTextTexture('B', initialValues.fontSize), // Cara trasera
-				createTextTexture('C', initialValues.fontSize), // Cara superior
-				createTextTexture('D', initialValues.fontSize), // Cara inferior
-				createTextTexture('E', initialValues.fontSize), // Cara derecha
-				createTextTexture('F', initialValues.fontSize)  // Cara izquierda
-			];
 
-			// Asignar las texturas a las caras del cubo
-			const materials = faceTextures.map(texture => new THREE.MeshBasicMaterial({ map: texture }));
+            updateMaterial(initialValues.mode);
 
-			// Crear el cubo con las texturas aplicadas
-			mesh = new THREE.Mesh(geometry, materials); // Cambié 'cube' a 'mesh'
-			mesh.position.set(initialValues.cubePosition.x, initialValues.cubePosition.y, initialValues.cubePosition.z); // Establecer la posición inicial
-			mesh.rotation.set(initialValues.cubeRotation.x, initialValues.cubeRotation.y, initialValues.cubeRotation.z); // Establecer la rotación inicial
-			scene.add(mesh);
+            axesHelper = new THREE.AxesHelper(5);
+            scene.add(axesHelper);
 
-			// Líneas guía (ejes X, Y, Z)
-			axesHelper = new THREE.AxesHelper(5);
-			scene.add(axesHelper);
-			console.log("➕ Ejes X, Y, Z añadidos a la escena.");
+            const planeGeometry = new THREE.PlaneGeometry(20, 20);
+            const planeMaterial = new THREE.MeshBasicMaterial({ color: 0xcccccc, side: THREE.DoubleSide });
+            const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            plane.rotation.x = Math.PI / 2;
+            scene.add(plane);
 
-			// Crear plano XZ visible
-			const planeGeometry = new THREE.PlaneGeometry(20, 20);
-			const planeMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
-			const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-			plane.rotation.x = Math.PI / 2;
-			scene.add(plane);
-			console.log("📏 Plano XZ añadido con color blanco.");
+            renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
 
-			// Renderizador
-			renderer = new THREE.WebGLRenderer({ antialias: true });
-			renderer.setPixelRatio(window.devicePixelRatio);
-			renderer.setSize(window.innerWidth, window.innerHeight);
-			renderer.setAnimationLoop(animate);
-			document.body.appendChild(renderer.domElement);
-			console.log("🎮 Renderizador creado y añadido al DOM.");
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enabled = true;
+            
+            setupGUI();
 
-			// Controladores OrbitControls
-			controls = new OrbitControls(camera, renderer.domElement);  // Crear OrbitControls
-			controls.enabled = true;
-			console.log("🌀 OrbitControls habilitados para controlar la cámara.");
+            window.addEventListener('resize', onWindowResize);
+            renderer.domElement.addEventListener('click', onCubeClick, false);
+        }
+        
+        function updateGeometry() {
+            if (mesh) {
+                mesh.geometry.dispose();
+                geometry = new RoundedBoxGeometry(1, 1, 1, Math.floor(geometryOptions.segments), geometryOptions.radius);
+                mesh.geometry = geometry;
 
-			// Controles GUI
-			const gui = new GUI();
-			console.log("🛠️ GUI de controles creado.");
+                if (edgesMesh) {
+                    edgesMesh.geometry.dispose();
+                    edgesMesh.geometry = new THREE.EdgesGeometry(geometry);
+                }
 
-			// Panel para controles
-			const cubeFolder = gui.addFolder('Cubo');
-			cubeFolder.add(mesh.rotation, 'x', 0, Math.PI * 2).name('Rotación X');
-			cubeFolder.add(mesh.rotation, 'y', 0, Math.PI * 2).name('Rotación Y');
-			cubeFolder.add(mesh.rotation, 'z', 0, Math.PI * 2).name('Rotación Z');
-			cubeFolder.open();
-			console.log("🔄 Controles de rotación del cubo añadidos al panel.");
+                // CORREGIDO: Llama a updateMaterial con el modo *actual*, no el inicial.
+                updateMaterial(materialOptions.mode);
+            }
+        }
+        
+        function createTextTexture(text, fontSize, bgColor, textColor) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const size = 256;
+            canvas.width = size; canvas.height = size;
 
-			// Controles para mover el cubo
-			const positionOptions = {
-				x: mesh.position.x,
-				y: mesh.position.y,
-				z: mesh.position.z
-			};
-			cubeFolder.add(positionOptions, 'x', -10, 10).name('Mover X').onChange(() => {
-				mesh.position.x = positionOptions.x;
-				console.log(`📍 Nueva posición del cubo en X: ${mesh.position.x}`);
-			});
-			cubeFolder.add(positionOptions, 'y', -10, 10).name('Mover Y').onChange(() => {
-				mesh.position.y = positionOptions.y;
-				console.log(`📍 Nueva posición del cubo en Y: ${mesh.position.y}`);
-			});
-			cubeFolder.add(positionOptions, 'z', -10, 10).name('Mover Z').onChange(() => {
-				mesh.position.z = positionOptions.z;
-				console.log(`📍 Nueva posición del cubo en Z: ${mesh.position.z}`);
-			});
-			console.log("🛠️ Controles para mover el cubo en cada eje añadidos al panel.");
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, size, size);
 
-			// Opción para activar/desactivar el movimiento del cubo
-			const movementOptions = {
-				moveCube: initialValues.moveCube
-			};
-			cubeFolder.add(movementOptions, 'moveCube').name('Activar Movimiento Cubo').onChange(() => {
-				isCubeMoving = movementOptions.moveCube;
-				console.log(`🚶‍♂️ Movimiento del cubo: ${isCubeMoving ? 'Activado' : 'Desactivado'}`);
-			});
-			console.log("🛠️ Control para activar/desactivar el movimiento del cubo añadido al panel.");
+            ctx.font = `bold ${fontSize}px Arial`;
+            ctx.fillStyle = textColor;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(text, size / 2, size / 2);
+            return new THREE.CanvasTexture(canvas);
+        }
 
-			// Opciones de material
-			const materialOptions = {
-				mode: initialValues.mode // Usar el valor predeterminado
-			};			
-			console.log("🎨 Opciones de material para el cubo creadas.");
+        function getRandomHexColor() {
+            return '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0').toUpperCase();
+        }
 
-			// Control de tamaño de letra (solo se muestra si se selecciona 'Letras')
-			const fontSizeControl = gui.add(initialValues, 'fontSize', 50, 200).name('Tamaño de la letra').step(1).onChange(() => {
-				if (materialOptions.mode === 'Letras') {
-					updateMaterial(); // Actualiza las texturas con el nuevo tamaño de letra
-				}
-			});
-			fontSizeControl.domElement.style.display = 'none'; // Inicialmente oculto
+        function setupGUI() {
+            const gui = new GUI();
+            const diceFolder = gui.addFolder('Animación del Dado');
+            diceFolder.add(diceOptions, 'bounciness', 0, 1).name('Rebote (Bounciness)').step(0.01);
+            diceFolder.open();
+            
+            const geometryFolder = gui.addFolder('Geometría del Dado');
+            geometryFolder.add(geometryOptions, 'radius', 0, 0.5).name('Curvatura (Radio)').step(0.01).onFinishChange(updateGeometry);
+            geometryFolder.add(geometryOptions, 'segments', 1, 20).name('Suavidad (Segmentos)').step(1).onFinishChange(updateGeometry);
+            geometryFolder.add(edgeOptions, 'show').name('Mostrar Contorno').onChange((value) => {
+                edgesMesh.visible = value;
+            });
+            geometryFolder.addColor(edgeOptions, 'color').name('Color Contorno').onChange((value) => {
+                edgesMesh.material.color.set(value);
+            });
+            geometryFolder.open();
 
-			// Solo mostrar el control de tamaño de letra si se selecciona 'Letras' en el combo
-			cubeFolder.add(materialOptions, 'mode', ['Textura', 'Wireframe', 'Color', 'Letras']).onChange((value) => {
-				if (value === 'Letras') {
-					fontSizeControl.domElement.style.display = 'block'; // Muestra el control					
-				} else {                    
-					fontSizeControl.domElement.style.display = 'none'; // Oculta el control
-				}
-                updateMaterial(); // Actualiza el cubo con letras
-			});
+            const materialFolder = gui.addFolder('Material');
+            // MODIFICADO: Se inicializa la variable global.
+            materialOptions = { mode: initialValues.mode };
+            
+            const fontSizeControl = materialFolder.add(initialValues, 'fontSize', 50, 200).name('Tamaño de la letra').step(1).onChange(() => updateMaterial(materialOptions.mode));
+            
+            letterBgColorControl = materialFolder.addColor(initialValues, 'letterBgColor').name('Fondo de Letra').onChange(() => updateMaterial(materialOptions.mode));
+            letterTextColorControl = materialFolder.addColor(initialValues, 'letterTextColor').name('Color de Letra').onChange(() => updateMaterial(materialOptions.mode));
+            randomColorsControl = materialFolder.add(initialValues, 'randomColors').name('Colores Aleatorios').onChange((value) => {
+                letterBgColorControl.domElement.style.pointerEvents = value ? 'none' : 'auto';
+                letterBgColorControl.domElement.style.opacity = value ? 0.5 : 1;
+                letterTextColorControl.domElement.style.pointerEvents = value ? 'none' : 'auto';
+                letterTextColorControl.domElement.style.opacity = value ? 0.5 : 1;
+                updateMaterial(materialOptions.mode);
+            });
 
-			console.log("🎨 Control de tamaño de letra añadido al panel.");
+            initialValues.faceTexts.forEach((text, index) => {
+                const control = materialFolder.add(initialValues.faceTexts, index)
+                    .name(`Cara ${String.fromCharCode(65 + index)}`)
+                    .listen()
+                    .onChange(() => updateMaterial(materialOptions.mode))
+                    .onFinishChange((value) => {
+                        initialValues.faceTexts[index] = value.substring(0, 3).toUpperCase();
+                        updateMaterial(materialOptions.mode);
+                    });
+                control.domElement.querySelector('input').setAttribute('maxlength', '3');
+                faceTextInputControls.push(control);
+            });
 
-			// Control de zoom
-			gui.add(camera.position, 'z', 0.1, 10).name('Zoom').step(0.1);
-			console.log("🔍 Control de zoom de la cámara añadido al GUI.");
+            materialFolder.add(materialOptions, 'mode', ['Textura', 'Wireframe', 'Color', 'Letras']).name('Modo de Material').onChange((value) => {
+                materialOptions.mode = value;
+                const toggleLetterControls = (show) => {
+                    fontSizeControl.domElement.style.display = show ? '' : 'none';
+                    letterBgColorControl.domElement.style.display = show ? '' : 'none';
+                    letterTextColorControl.domElement.style.display = show ? '' : 'none';
+                    randomColorsControl.domElement.style.display = show ? '' : 'none';
+                    faceTextInputControls.forEach(control => {
+                        control.domElement.style.display = show ? '' : 'none';
+                    });
+                    const disableColorControls = show && initialValues.randomColors;
+                    letterBgColorControl.domElement.style.pointerEvents = disableColorControls ? 'none' : 'auto';
+                    letterBgColorControl.domElement.style.opacity = disableColorControls ? 0.5 : 1;
+                    letterTextColorControl.domElement.style.pointerEvents = disableColorControls ? 'none' : 'auto';
+                    letterTextColorControl.domElement.style.opacity = disableColorControls ? 0.5 : 1;
+                };
+                toggleLetterControls(value === 'Letras');
+                updateMaterial(value);
+            });
+            
+            const isLettersMode = initialValues.mode === 'Letras';
+            fontSizeControl.domElement.style.display = isLettersMode ? '' : 'none';
+            letterBgColorControl.domElement.style.display = isLettersMode ? '' : 'none';
+            letterTextColorControl.domElement.style.display = isLettersMode ? '' : 'none';
+            randomColorsControl.domElement.style.display = isLettersMode ? '' : 'none';
+            faceTextInputControls.forEach(control => {
+                control.domElement.style.display = isLettersMode ? '' : 'none';
+            });
+            if (isLettersMode && initialValues.randomColors) {
+                letterBgColorControl.domElement.style.pointerEvents = 'none';
+                letterBgColorControl.domElement.style.opacity = 0.5;
+                letterTextColorControl.domElement.style.pointerEvents = 'none';
+                letterTextColorControl.domElement.style.opacity = 0.5;
+            }
 
-			// Botón de Reset
-			gui.add({ reset: () => resetCube() }, 'reset').name('Resetear Cubo');
-			console.log("🔄 Botón de reset añadido al panel.");
+            materialFolder.open();
+            
+            // ... (el resto de la función setupGUI y del script permanece igual) ...
+            const cubeFolder = gui.addFolder('Controles del Cubo');
+            cubeFolder.add(mesh.rotation, 'x', 0, Math.PI * 2).name('Rotación X').listen();
+            cubeFolder.add(mesh.rotation, 'y', 0, Math.PI * 2).name('Rotación Y').listen();
+            cubeFolder.add(mesh.rotation, 'z', 0, Math.PI * 2).name('Rotación Z').listen();
+            cubeFolder.add(mesh.position, 'x', -10, 10).name('Mover X').listen();
+            cubeFolder.add(mesh.position, 'y', -10, 10).name('Mover Y').listen();
+            cubeFolder.add(mesh.position, 'z', -10, 10).name('Mover Z').listen();
+            cubeFolder.open();
+            const generalFolder = gui.addFolder('General');
+            const movementOptions = { moveCube: initialValues.moveCube };
+            activateRotationControl = generalFolder.add(movementOptions, 'moveCube').name('Activar Rotación Auto.').onChange((value) => { isCubeMoving = value; });
+            generalFolder.add(camera.position, 'z', 0.1, 10).name('Zoom').step(0.1);
+            generalFolder.add({ reset: resetCube }, 'reset').name('Resetear Cubo');
+            const axesOptions = { showAxes: true };
+            generalFolder.add(axesOptions, 'showAxes').name('Mostrar Ejes').onChange(toggleAxes);
+            const controlsOptions = { enableControls: true };
+            generalFolder.add(controlsOptions, 'enableControls').name('Habilitar Controles').onChange(toggleControls);
+            generalFolder.add(initialValues, 'enableLogs').name('Activar Logs').onChange(value => enableLogs = value);
+            generalFolder.open();
+        }
+        function onCubeClick(event) { if (isAnimating) return; mouse.x = (event.clientX / window.innerWidth) * 2 - 1; mouse.y = - (event.clientY / window.innerHeight) * 2 + 1; raycaster.setFromCamera(mouse, camera); const intersects = raycaster.intersectObjects([mesh]); if (intersects.length > 0) { rollDice(); } }
+        function rollDice() { isAnimating = true; isCubeMoving = false; if (activateRotationControl) { activateRotationControl.setValue(false); activateRotationControl.updateDisplay(); } const targetRotations = [ { x: 0, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: Math.PI, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: -Math.PI / 2, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: Math.PI / 2, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: 0, y: Math.PI * Math.round(Math.random() * 4), z: Math.PI / 2 }, { x: 0, y: Math.PI * Math.round(Math.random() * 4), z: -Math.PI / 2 } ]; const finalRotation = targetRotations[Math.floor(Math.random() * targetRotations.length)]; const tossHeight = 3 + Math.random() * 2; const totalDuration = 1200 + diceOptions.bounciness * 800; const tossUp = new TWEEN.Tween(mesh.position).to({ y: tossHeight }, totalDuration * 0.3).easing(TWEEN.Easing.Quadratic.Out); const randomRotation = new TWEEN.Tween(mesh.rotation).to({x: mesh.rotation.x + (Math.random() * 8 - 4) * Math.PI, y: mesh.rotation.y + (Math.random() * 8 - 4) * Math.PI, z: mesh.rotation.z + (Math.random() * 8 - 4) * Math.PI}, totalDuration).easing(TWEEN.Easing.Linear.None); const finalSettleRotation = new TWEEN.Tween(mesh.rotation).to(finalRotation, totalDuration * 0.7).easing(TWEEN.Easing.Quadratic.InOut); let fallAndBounce = new TWEEN.Tween(mesh.position).to({y: 0.5}, totalDuration * 0.15).easing(TWEEN.Easing.Quadratic.In); let lastBounceTween = fallAndBounce; let numBounces = Math.round(diceOptions.bounciness * 4); let currentBounceHeight = tossHeight * 0.4 * diceOptions.bounciness; for (let i = 0; i < numBounces; i++) { if (currentBounceHeight < 0.1) break; const bounceUp = new TWEEN.Tween(mesh.position).to({ y: 0.5 + currentBounceHeight }, totalDuration * 0.15 / (i + 1)).easing(TWEEN.Easing.Quadratic.Out); const bounceDown = new TWEEN.Tween(mesh.position).to({ y: 0.5 }, totalDuration * 0.15 / (i + 1)).easing(TWEEN.Easing.Quadratic.In); lastBounceTween.chain(bounceUp); bounceUp.chain(bounceDown); lastBounceTween = bounceDown; currentBounceHeight *= 0.5; } lastBounceTween.onComplete(() => { isAnimating = false; }); tossUp.chain(fallAndBounce); tossUp.start(); randomRotation.start(); tossUp.onComplete(() => finalSettleRotation.start()); }
+        function resetCube() { mesh.rotation.set(initialValues.cubeRotation.x, initialValues.cubeRotation.y, initialValues.cubeRotation.z); mesh.position.set(initialValues.cubePosition.x, initialValues.cubePosition.y, initialValues.cubePosition.z); camera.position.set(0, 0, initialValues.zoom); }
+        function toggleAxes(value) { axesHelper.visible = value; }
+        function toggleControls(value) { controls.enabled = value; }
+        function updateMaterial(mode) { if (mode === 'Wireframe') { mesh.material = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true }); } else if (mode === 'Color') { const colors = []; for (let i = 0; i < geometry.attributes.position.count; i++) { colors.push(Math.random(), Math.random(), Math.random()); } geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3)); mesh.material = new THREE.MeshBasicMaterial({ vertexColors: true }); } else if (mode === 'Letras') { const faceTextures = initialValues.faceTexts.map((text, index) => { let bgColor = initialValues.letterBgColor; let textColor = initialValues.letterTextColor; if (initialValues.randomColors) { bgColor = getRandomHexColor(); textColor = getRandomHexColor(); if (bgColor === textColor) textColor = getRandomHexColor(); } return createTextTexture(text, initialValues.fontSize, bgColor, textColor); }); mesh.material = faceTextures.map(tex => new THREE.MeshBasicMaterial({ map: tex })); } else { mesh.material = new THREE.MeshBasicMaterial({ map: texture }); } }
+        function onWindowResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }
+        function animate() { requestAnimationFrame(animate); TWEEN.update(); if (isCubeMoving && !isAnimating) { mesh.rotation.y += 0.04; } controls.update(); renderer.render(scene, camera); }
 
-			// Mostrar/Ocultar las líneas guía (ejes)
-			const axesOptions = { showAxes: true };
-			gui.add(axesOptions, 'showAxes').onChange(toggleAxes);
-			console.log("🧭 Control de visibilidad de los ejes añadido al GUI.");
-
-			// Activar/desactivar OrbitControls con un checkbox
-			const controlsOptions = {
-				enableControls: true
-			};
-			gui.add(controlsOptions, 'enableControls').onChange(toggleControls);
-			console.log("☑️ Control para habilitar/deshabilitar OrbitControls añadido al GUI.");
-
-			// Opción para activar/desactivar los logs
-			gui.add({ enableLogs: false }, 'enableLogs').onChange((value) => {
-				enableLogs = value;
-				if (enableLogs) console.log("📝 Logs activados.");
-				else console.log("📝 Logs desactivados.");
-			});
-			console.log("🛠️ Opción para activar/desactivar logs añadida.");
-
-			// Manejar el cambio de tamaño de la ventana
-			window.addEventListener('resize', onWindowResize);
-			console.log("🖥️ Evento de cambio de tamaño de la ventana añadido.");
-
-			// Función para resetear el cubo
-			function resetCube() {
-				console.log("🔄 Restableciendo el cubo a su posición inicial...");
-				mesh.rotation.set(0, 0, 0);  // Resetear rotación
-				mesh.position.set(initialValues.cubePosition.x, initialValues.cubePosition.y, initialValues.cubePosition.z);  // Resetear posición (y predefinido en 1)
-				camera.position.set(0, 0, initialValues.zoom); // Resetear cámara
-				console.log("📍 Cubo y cámara reseteados.");
-			}
-
-			function toggleAxes(value) {
-				console.log(`🔳 Mostrar/Ocultar ejes: ${value}`);
-				if (value) {
-					scene.add(axesHelper);
-				} else {
-					scene.remove(axesHelper);
-				}
-			}
-
-			function toggleControls(value) {
-				console.log(`🌍 Activar OrbitControls: ${value}`);
-				controls.enabled = value;
-			}
-
-			function updateMaterial() {
-				console.log("🔄 Actualizando el material del cubo...");
-				if (materialOptions.mode === 'Wireframe') {
-					mesh.material = new THREE.MeshBasicMaterial({
-						wireframe: true,
-						wireframeLinewidth: 2,
-						color: 0x000000 // Líneas negras
-					});
-					console.log("🟩 Material cambiado a Wireframe (líneas negras).");
-				} else if (materialOptions.mode === 'Color') {
-					const colors = [];
-					const vertexColors = [];
-					for (let i = 0; i < geometry.attributes.position.count; i++) {
-						colors.push(Math.random(), Math.random(), Math.random());
-						vertexColors.push(...colors);
-					}
-					geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vertexColors), 3));
-					mesh.material = new THREE.MeshBasicMaterial({ vertexColors: true });
-					console.log("🎨 Material cambiado a Color con colores aleatorios.");
-				} else if (materialOptions.mode === 'Letras') {
-					// Asignar las texturas a las caras del cubo (letras A-F) con el tamaño de letra actualizado
-					const faceTextures = [
-						createTextTexture('A', initialValues.fontSize),
-						createTextTexture('B', initialValues.fontSize),
-						createTextTexture('C', initialValues.fontSize),
-						createTextTexture('D', initialValues.fontSize),
-						createTextTexture('E', initialValues.fontSize),
-						createTextTexture('F', initialValues.fontSize)
-					];
-					const materials = faceTextures.map(texture => new THREE.MeshBasicMaterial({ map: texture }));
-					mesh.material = materials;
-					console.log("🎨 Material cambiado a Letras en cada cara.");
-				} else {
-					mesh.material = new THREE.MeshBasicMaterial({ map: texture });
-					console.log("🖼️ Material restaurado a la textura.");
-				}
-				mesh.material.needsUpdate = true;
-			}
-		}
-
-		// Función para manejar el cambio de tamaño de la ventana
-		function onWindowResize() {
-			console.log("🔄 Redimensionando la ventana...");
-			camera.aspect = window.innerWidth / window.innerHeight;
-			camera.updateProjectionMatrix();
-			renderer.setSize(window.innerWidth, window.innerHeight);
-			console.log("📏 Cámara y renderizador redimensionados.");
-		}
-
-		// Función de animación
-		function animate() {
-			if (isCubeMoving) {
-				if (enableLogs) console.log("🎬 Iniciando el ciclo de animación...");
-				mesh.rotation.x += 0.005;
-				mesh.rotation.y += 0.01;
-				if (enableLogs) console.log(`🔄 Rotación del cubo: X=${mesh.rotation.x}, Y=${mesh.rotation.y}, Z=${mesh.rotation.z}`);
-			}
-			renderer.render(scene, camera);
-			controls.update();
-			if (enableLogs) console.log("🎮 Renderizado completo, controles actualizados.");
-		}
-
-	</script>
-
+    </script>
 </body>
 </html>

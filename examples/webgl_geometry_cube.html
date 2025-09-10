@@ -1,77 +1,326 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-		<title>three.js webgl - geometry - cube</title>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-		<link type="text/css" rel="stylesheet" href="main.css">
-	</head>
-	<body>
-		<script type="importmap">
-			{
-				"imports": {
-					"three": "../build/three.module.js",
-					"three/addons/": "./jsm/"
+<head>
+	<title>three.js webgl - geometry - cube</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device.width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<link type="text/css" rel="stylesheet" href="main.css">
+</head>
+<body>
+	<script type="importmap">
+		{
+			"imports": {
+				"three": "../build/three.module.js",
+				"three/addons/": "./jsm/"
+			}
+		}
+	</script>
+
+	<script type="module">
+
+		import * as THREE from 'three';
+		import { OrbitControls } from 'three/addons/controls/OrbitControls.js'; // Importación de OrbitControls
+		import { GUI } from 'https://cdn.jsdelivr.net/npm/dat.gui@0.7.7/build/dat.gui.module.js'; // Agregar la librería dat.GUI
+
+		// Valores iniciales definidos en un solo lugar
+		const initialValues = {
+			mode: 'Letras', // El valor predeterminado del modo
+			moveCube: true, // Estado del movimiento del cubo
+			showLetters: true, // Mostrar letras por defecto
+			zoom: 5, // Valor inicial del zoom de la cámara
+			cubePosition: { x: 0, y: 1, z: 0 }, // Posición inicial del cubo
+			cubeRotation: { x: 0, y: 0, z: 0 }, // Rotación inicial del cubo
+			fontSize: 50, // Tamaño de la letra predeterminado
+			enableLogs: false // Control de logs desactivado por defecto
+		};
+
+		let camera, scene, renderer, controls;
+		let mesh;
+		let axesHelper;
+		let enableLogs = initialValues.enableLogs; // Activar o desactivar los logs
+		let isCubeMoving = initialValues.moveCube; // Controlar si el cubo se mueve o no
+
+		init();
+
+		function init() {
+			console.log("🚀 Iniciando la escena de THREE.js... Vamos allá!");
+
+			// Escena y cámara
+			scene = new THREE.Scene();
+			camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+			camera.position.z = initialValues.zoom;
+			console.log("🔮 Cámara creada y posicionada en el eje Z: ", camera.position.z);
+
+			// Fondo negro
+			scene.background = new THREE.Color(0x000000);
+			console.log("🌑 Fondo de la escena configurado a negro.");
+
+			// Textura del cubo
+			const texture = new THREE.TextureLoader().load('textures/crate.gif');
+			texture.colorSpace = THREE.SRGBColorSpace;
+			console.log("🖼️ Cargando la textura 'crate.gif'... Textura cargada: ", texture);
+
+			// Geometría del cubo (usando BufferGeometry)
+			const geometry = new THREE.BoxGeometry();
+			console.log("🔳 Geometría del cubo (BoxGeometry) creada.");
+
+			// Función para crear una textura con texto
+			function createTextTexture(text, fontSize) {
+				const canvas = document.createElement('canvas');
+				const ctx = canvas.getContext('2d');
+				const size = 256;
+				canvas.width = size;
+				canvas.height = size;
+
+				ctx.fillStyle = 'white';
+				ctx.fillRect(0, 0, size, size);
+
+				ctx.font = `bold ${fontSize}px Arial`;
+				ctx.fillStyle = 'black';
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.fillText(text, size / 2, size / 2);
+
+				const texture = new THREE.CanvasTexture(canvas);
+				texture.minFilter = THREE.LinearFilter;
+				texture.wrapS = THREE.ClampToEdgeWrapping;
+				texture.wrapT = THREE.ClampToEdgeWrapping;
+				texture.needsUpdate = true;
+
+				return texture;
+			}
+
+			// Crear las texturas para cada cara
+			const faceTextures = [
+				createTextTexture('A', initialValues.fontSize), // Cara frontal
+				createTextTexture('B', initialValues.fontSize), // Cara trasera
+				createTextTexture('C', initialValues.fontSize), // Cara superior
+				createTextTexture('D', initialValues.fontSize), // Cara inferior
+				createTextTexture('E', initialValues.fontSize), // Cara derecha
+				createTextTexture('F', initialValues.fontSize)  // Cara izquierda
+			];
+
+			// Asignar las texturas a las caras del cubo
+			const materials = faceTextures.map(texture => new THREE.MeshBasicMaterial({ map: texture }));
+
+			// Crear el cubo con las texturas aplicadas
+			mesh = new THREE.Mesh(geometry, materials); // Cambié 'cube' a 'mesh'
+			mesh.position.set(initialValues.cubePosition.x, initialValues.cubePosition.y, initialValues.cubePosition.z); // Establecer la posición inicial
+			mesh.rotation.set(initialValues.cubeRotation.x, initialValues.cubeRotation.y, initialValues.cubeRotation.z); // Establecer la rotación inicial
+			scene.add(mesh);
+
+			// Líneas guía (ejes X, Y, Z)
+			axesHelper = new THREE.AxesHelper(5);
+			scene.add(axesHelper);
+			console.log("➕ Ejes X, Y, Z añadidos a la escena.");
+
+			// Crear plano XZ visible
+			const planeGeometry = new THREE.PlaneGeometry(20, 20);
+			const planeMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+			const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+			plane.rotation.x = Math.PI / 2;
+			scene.add(plane);
+			console.log("📏 Plano XZ añadido con color blanco.");
+
+			// Renderizador
+			renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer.setPixelRatio(window.devicePixelRatio);
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			renderer.setAnimationLoop(animate);
+			document.body.appendChild(renderer.domElement);
+			console.log("🎮 Renderizador creado y añadido al DOM.");
+
+			// Controladores OrbitControls
+			controls = new OrbitControls(camera, renderer.domElement);  // Crear OrbitControls
+			controls.enabled = true;
+			console.log("🌀 OrbitControls habilitados para controlar la cámara.");
+
+			// Controles GUI
+			const gui = new GUI();
+			console.log("🛠️ GUI de controles creado.");
+
+			// Panel para controles
+			const cubeFolder = gui.addFolder('Cubo');
+			cubeFolder.add(mesh.rotation, 'x', 0, Math.PI * 2).name('Rotación X');
+			cubeFolder.add(mesh.rotation, 'y', 0, Math.PI * 2).name('Rotación Y');
+			cubeFolder.add(mesh.rotation, 'z', 0, Math.PI * 2).name('Rotación Z');
+			cubeFolder.open();
+			console.log("🔄 Controles de rotación del cubo añadidos al panel.");
+
+			// Controles para mover el cubo
+			const positionOptions = {
+				x: mesh.position.x,
+				y: mesh.position.y,
+				z: mesh.position.z
+			};
+			cubeFolder.add(positionOptions, 'x', -10, 10).name('Mover X').onChange(() => {
+				mesh.position.x = positionOptions.x;
+				console.log(`📍 Nueva posición del cubo en X: ${mesh.position.x}`);
+			});
+			cubeFolder.add(positionOptions, 'y', -10, 10).name('Mover Y').onChange(() => {
+				mesh.position.y = positionOptions.y;
+				console.log(`📍 Nueva posición del cubo en Y: ${mesh.position.y}`);
+			});
+			cubeFolder.add(positionOptions, 'z', -10, 10).name('Mover Z').onChange(() => {
+				mesh.position.z = positionOptions.z;
+				console.log(`📍 Nueva posición del cubo en Z: ${mesh.position.z}`);
+			});
+			console.log("🛠️ Controles para mover el cubo en cada eje añadidos al panel.");
+
+			// Opción para activar/desactivar el movimiento del cubo
+			const movementOptions = {
+				moveCube: initialValues.moveCube
+			};
+			cubeFolder.add(movementOptions, 'moveCube').name('Activar Movimiento Cubo').onChange(() => {
+				isCubeMoving = movementOptions.moveCube;
+				console.log(`🚶‍♂️ Movimiento del cubo: ${isCubeMoving ? 'Activado' : 'Desactivado'}`);
+			});
+			console.log("🛠️ Control para activar/desactivar el movimiento del cubo añadido al panel.");
+
+			// Opciones de material
+			const materialOptions = {
+				mode: initialValues.mode // Usar el valor predeterminado
+			};			
+			console.log("🎨 Opciones de material para el cubo creadas.");
+
+			// Control de tamaño de letra (solo se muestra si se selecciona 'Letras')
+			const fontSizeControl = gui.add(initialValues, 'fontSize', 50, 200).name('Tamaño de la letra').step(1).onChange(() => {
+				if (materialOptions.mode === 'Letras') {
+					updateMaterial(); // Actualiza las texturas con el nuevo tamaño de letra
+				}
+			});
+			fontSizeControl.domElement.style.display = 'none'; // Inicialmente oculto
+
+			// Solo mostrar el control de tamaño de letra si se selecciona 'Letras' en el combo
+			cubeFolder.add(materialOptions, 'mode', ['Textura', 'Wireframe', 'Color', 'Letras']).onChange((value) => {
+				if (value === 'Letras') {
+					fontSizeControl.domElement.style.display = 'block'; // Muestra el control					
+				} else {                    
+					fontSizeControl.domElement.style.display = 'none'; // Oculta el control
+				}
+                updateMaterial(); // Actualiza el cubo con letras
+			});
+
+			console.log("🎨 Control de tamaño de letra añadido al panel.");
+
+			// Control de zoom
+			gui.add(camera.position, 'z', 0.1, 10).name('Zoom').step(0.1);
+			console.log("🔍 Control de zoom de la cámara añadido al GUI.");
+
+			// Botón de Reset
+			gui.add({ reset: () => resetCube() }, 'reset').name('Resetear Cubo');
+			console.log("🔄 Botón de reset añadido al panel.");
+
+			// Mostrar/Ocultar las líneas guía (ejes)
+			const axesOptions = { showAxes: true };
+			gui.add(axesOptions, 'showAxes').onChange(toggleAxes);
+			console.log("🧭 Control de visibilidad de los ejes añadido al GUI.");
+
+			// Activar/desactivar OrbitControls con un checkbox
+			const controlsOptions = {
+				enableControls: true
+			};
+			gui.add(controlsOptions, 'enableControls').onChange(toggleControls);
+			console.log("☑️ Control para habilitar/deshabilitar OrbitControls añadido al GUI.");
+
+			// Opción para activar/desactivar los logs
+			gui.add({ enableLogs: false }, 'enableLogs').onChange((value) => {
+				enableLogs = value;
+				if (enableLogs) console.log("📝 Logs activados.");
+				else console.log("📝 Logs desactivados.");
+			});
+			console.log("🛠️ Opción para activar/desactivar logs añadida.");
+
+			// Manejar el cambio de tamaño de la ventana
+			window.addEventListener('resize', onWindowResize);
+			console.log("🖥️ Evento de cambio de tamaño de la ventana añadido.");
+
+			// Función para resetear el cubo
+			function resetCube() {
+				console.log("🔄 Restableciendo el cubo a su posición inicial...");
+				mesh.rotation.set(0, 0, 0);  // Resetear rotación
+				mesh.position.set(initialValues.cubePosition.x, initialValues.cubePosition.y, initialValues.cubePosition.z);  // Resetear posición (y predefinido en 1)
+				camera.position.set(0, 0, initialValues.zoom); // Resetear cámara
+				console.log("📍 Cubo y cámara reseteados.");
+			}
+
+			function toggleAxes(value) {
+				console.log(`🔳 Mostrar/Ocultar ejes: ${value}`);
+				if (value) {
+					scene.add(axesHelper);
+				} else {
+					scene.remove(axesHelper);
 				}
 			}
-		</script>
 
-		<script type="module">
-
-			import * as THREE from 'three';
-
-			let camera, scene, renderer;
-			let mesh;
-
-			init();
-
-			function init() {
-
-				camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.1, 100 );
-				camera.position.z = 2;
-
-				scene = new THREE.Scene();
-
-				const texture = new THREE.TextureLoader().load( 'textures/crate.gif' );
-				texture.colorSpace = THREE.SRGBColorSpace;
-
-				const geometry = new THREE.BoxGeometry();
-				const material = new THREE.MeshBasicMaterial( { map: texture } );
-
-				mesh = new THREE.Mesh( geometry, material );
-				scene.add( mesh );
-
-				renderer = new THREE.WebGLRenderer( { antialias: true } );
-				renderer.setPixelRatio( window.devicePixelRatio );
-				renderer.setSize( window.innerWidth, window.innerHeight );
-				renderer.setAnimationLoop( animate );
-				document.body.appendChild( renderer.domElement );
-
-				//
-
-				window.addEventListener( 'resize', onWindowResize );
-
+			function toggleControls(value) {
+				console.log(`🌍 Activar OrbitControls: ${value}`);
+				controls.enabled = value;
 			}
 
-			function onWindowResize() {
-
-				camera.aspect = window.innerWidth / window.innerHeight;
-				camera.updateProjectionMatrix();
-
-				renderer.setSize( window.innerWidth, window.innerHeight );
-
+			function updateMaterial() {
+				console.log("🔄 Actualizando el material del cubo...");
+				if (materialOptions.mode === 'Wireframe') {
+					mesh.material = new THREE.MeshBasicMaterial({
+						wireframe: true,
+						wireframeLinewidth: 2,
+						color: 0x000000 // Líneas negras
+					});
+					console.log("🟩 Material cambiado a Wireframe (líneas negras).");
+				} else if (materialOptions.mode === 'Color') {
+					const colors = [];
+					const vertexColors = [];
+					for (let i = 0; i < geometry.attributes.position.count; i++) {
+						colors.push(Math.random(), Math.random(), Math.random());
+						vertexColors.push(...colors);
+					}
+					geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vertexColors), 3));
+					mesh.material = new THREE.MeshBasicMaterial({ vertexColors: true });
+					console.log("🎨 Material cambiado a Color con colores aleatorios.");
+				} else if (materialOptions.mode === 'Letras') {
+					// Asignar las texturas a las caras del cubo (letras A-F) con el tamaño de letra actualizado
+					const faceTextures = [
+						createTextTexture('A', initialValues.fontSize),
+						createTextTexture('B', initialValues.fontSize),
+						createTextTexture('C', initialValues.fontSize),
+						createTextTexture('D', initialValues.fontSize),
+						createTextTexture('E', initialValues.fontSize),
+						createTextTexture('F', initialValues.fontSize)
+					];
+					const materials = faceTextures.map(texture => new THREE.MeshBasicMaterial({ map: texture }));
+					mesh.material = materials;
+					console.log("🎨 Material cambiado a Letras en cada cara.");
+				} else {
+					mesh.material = new THREE.MeshBasicMaterial({ map: texture });
+					console.log("🖼️ Material restaurado a la textura.");
+				}
+				mesh.material.needsUpdate = true;
 			}
+		}
 
-			function animate() {
+		// Función para manejar el cambio de tamaño de la ventana
+		function onWindowResize() {
+			console.log("🔄 Redimensionando la ventana...");
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			console.log("📏 Cámara y renderizador redimensionados.");
+		}
 
+		// Función de animación
+		function animate() {
+			if (isCubeMoving) {
+				if (enableLogs) console.log("🎬 Iniciando el ciclo de animación...");
 				mesh.rotation.x += 0.005;
 				mesh.rotation.y += 0.01;
-
-				renderer.render( scene, camera );
-
+				if (enableLogs) console.log(`🔄 Rotación del cubo: X=${mesh.rotation.x}, Y=${mesh.rotation.y}, Z=${mesh.rotation.z}`);
 			}
+			renderer.render(scene, camera);
+			controls.update();
+			if (enableLogs) console.log("🎮 Renderizado completo, controles actualizados.");
+		}
 
-		</script>
+	</script>
 
-	</body>
+</body>
 </html>

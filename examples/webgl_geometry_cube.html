@@ -26,13 +26,29 @@
         import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
         
         const edgeOptions = {
-            show: true,
+            show: false,
             color: '#000000'
         };
 
         const geometryOptions = {
             radius: 0.1,
             segments: 8
+        };
+        
+        const materialEdgeOptions = {
+            gradient: false
+        };
+
+        const animationOptions = {
+            tossHeight: 4,
+            speed: 1,
+            spinIntensity: 8,
+            soundEnabled: true 
+        };
+
+        const faceColorOptions = {
+            faceA: '#ff0000', faceB: '#00ff00', faceC: '#0000ff',
+            faceD: '#ffff00', faceE: '#ff00ff', faceF: '#00ffff'
         };
 
         const initialValues = {
@@ -46,17 +62,17 @@
             faceTexts: ['A', 'B', 'C', 'D', 'E', 'F'],
             letterBgColor: '#FFFFFF',
             letterTextColor: '#000000',
-            randomColors: false
+            randomColors: true
         };
 
         let camera, scene, renderer, controls;
-        let mesh, geometry, texture;
+        let mesh, geometry;
         let axesHelper;
         let edgesMesh; 
+        let shaderEdgesMesh;
         let enableLogs = initialValues.enableLogs;
         let isCubeMoving = initialValues.moveCube;
-
-        // MODIFICADO: Se declara aquí para que sea accesible globalmente.
+        
         let materialOptions; 
 
         const raycaster = new THREE.Raycaster();
@@ -70,6 +86,17 @@
         let activateRotationControl; 
         let faceTextInputControls = [];
         let letterBgColorControl, letterTextColorControl, randomColorsControl;
+        
+        let degradadoControl;
+        let faceColorControls = [];
+        
+        let edgeColorTween = null;
+        let currentFaceColors = Array(6).fill(initialValues.letterBgColor);
+
+        const textureLoader = new THREE.TextureLoader();
+
+        const soundToss = new Audio('sounds/toss.mp3');
+        const soundImpact = new Audio('sounds/impact.mp3');
 
         init();
         animate();
@@ -80,21 +107,54 @@
             camera.position.z = initialValues.zoom;
             scene.background = new THREE.Color(0x000000);
 
-            texture = new THREE.TextureLoader().load('textures/crate.gif');
-            texture.colorSpace = THREE.SRGBColorSpace;
-
             geometry = new RoundedBoxGeometry(1, 1, 1, geometryOptions.segments, geometryOptions.radius);
 
             mesh = new THREE.Mesh(geometry);
             mesh.position.set(initialValues.cubePosition.x, initialValues.cubePosition.y, initialValues.cubePosition.z);
             mesh.rotation.set(initialValues.cubeRotation.x, initialValues.cubeRotation.y, initialValues.cubeRotation.z);
             scene.add(mesh);
-
+            
             const edgesGeometry = new THREE.EdgesGeometry(geometry);
             const edgesMaterial = new THREE.LineBasicMaterial({ color: edgeOptions.color, linewidth: 2 });
             edgesMesh = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+            edgesMesh.visible = edgeOptions.show;
             mesh.add(edgesMesh);
 
+            const shaderGeometry = geometry.clone();
+            addBarycentricCoordinates(shaderGeometry);
+
+            const shaderMaterial = new THREE.ShaderMaterial({
+                vertexShader: `
+                    attribute vec3 barycentric;
+                    varying vec3 vBarycentric;
+                    void main() {
+                        vBarycentric = barycentric;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    varying vec3 vBarycentric;
+                    uniform vec3 u_edgeColor;
+                    uniform float u_time;
+                    void main() {
+                        float pulse = sin(u_time * 2.0) * 0.5 + 0.5;
+                        float thickness = 0.02 + pulse * 0.02; 
+                        float softness = 0.02 + pulse * 0.02;
+                        float edgeFactor = min(min(vBarycentric.x, vBarycentric.y), vBarycentric.z);
+                        float alpha = smoothstep(thickness - softness, thickness + softness, edgeFactor);
+                        if (alpha < 0.01) { discard; }
+                        gl_FragColor = vec4(u_edgeColor, alpha);
+                    }
+                `,
+                uniforms: {
+                    u_edgeColor: { value: new THREE.Color(edgeOptions.color) },
+                    u_time: { value: 0.0 }
+                },
+                transparent: true
+            });
+            shaderEdgesMesh = new THREE.Mesh(shaderGeometry, shaderMaterial);
+            shaderEdgesMesh.visible = false;
+            mesh.add(shaderEdgesMesh);
 
             updateMaterial(initialValues.mode);
 
@@ -116,23 +176,37 @@
             controls.enabled = true;
             
             setupGUI();
-
             window.addEventListener('resize', onWindowResize);
             renderer.domElement.addEventListener('click', onCubeClick, false);
         }
         
+        function addBarycentricCoordinates(geometry) {
+            const position = geometry.attributes.position;
+            const count = position.count;
+            const barycentric = new Float32Array(count * 3);
+            for (let i = 0; i < count; i += 3) {
+                barycentric[i * 3 + 0] = 1; barycentric[i * 3 + 1] = 0; barycentric[i * 3 + 2] = 0;
+                barycentric[(i + 1) * 3 + 0] = 0; barycentric[(i + 1) * 3 + 1] = 1; barycentric[(i + 1) * 3 + 2] = 0;
+                barycentric[(i + 2) * 3 + 0] = 0; barycentric[(i + 2) * 3 + 1] = 0; barycentric[(i + 2) * 3 + 2] = 1;
+            }
+            geometry.setAttribute('barycentric', new THREE.BufferAttribute(barycentric, 3));
+        }
+
         function updateGeometry() {
             if (mesh) {
                 mesh.geometry.dispose();
                 geometry = new RoundedBoxGeometry(1, 1, 1, Math.floor(geometryOptions.segments), geometryOptions.radius);
                 mesh.geometry = geometry;
-
                 if (edgesMesh) {
                     edgesMesh.geometry.dispose();
                     edgesMesh.geometry = new THREE.EdgesGeometry(geometry);
                 }
-
-                // CORREGIDO: Llama a updateMaterial con el modo *actual*, no el inicial.
+                if (shaderEdgesMesh) {
+                    shaderEdgesMesh.geometry.dispose();
+                    const newShaderGeom = geometry.clone();
+                    addBarycentricCoordinates(newShaderGeom);
+                    shaderEdgesMesh.geometry = newShaderGeom;
+                }
                 updateMaterial(materialOptions.mode);
             }
         }
@@ -142,10 +216,8 @@
             const ctx = canvas.getContext('2d');
             const size = 256;
             canvas.width = size; canvas.height = size;
-
             ctx.fillStyle = bgColor;
             ctx.fillRect(0, 0, size, size);
-
             ctx.font = `bold ${fontSize}px Arial`;
             ctx.fillStyle = textColor;
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -153,94 +225,154 @@
             return new THREE.CanvasTexture(canvas);
         }
 
+        function createDiceCanvasTexture(imagePath, color, callback) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const size = 256;
+            canvas.width = size;
+            canvas.height = size;
+            ctx.fillStyle = color;
+            ctx.fillRect(0, 0, size, size);
+            textureLoader.load(imagePath, (texture) => {
+                ctx.drawImage(texture.image, 0, 0, size, size);
+                callback(new THREE.CanvasTexture(canvas));
+            });
+        }
+
         function getRandomHexColor() {
             return '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0').toUpperCase();
+        }
+
+        function getContrastColor(hex) {
+            const r = parseInt(hex.substr(1, 2), 16) / 255;
+            const g = parseInt(hex.substr(3, 2), 16) / 255;
+            const b = parseInt(hex.substr(5, 2), 16) / 255;
+            const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+            return luminance > 0.5 ? '#000000' : '#FFFFFF';
         }
 
         function setupGUI() {
             const gui = new GUI();
             const diceFolder = gui.addFolder('Animación del Dado');
             diceFolder.add(diceOptions, 'bounciness', 0, 1).name('Rebote (Bounciness)').step(0.01);
+            diceFolder.add(animationOptions, 'tossHeight', 1, 10).name('Altura Lanzamiento');
+            diceFolder.add(animationOptions, 'speed', 0.5, 2).name('Velocidad');
+            diceFolder.add(animationOptions, 'spinIntensity', 0, 20).name('Intensidad de Giro');
+            diceFolder.add(animationOptions, 'soundEnabled').name('Activar Sonido');
+            
             diceFolder.open();
             
             const geometryFolder = gui.addFolder('Geometría del Dado');
             geometryFolder.add(geometryOptions, 'radius', 0, 0.5).name('Curvatura (Radio)').step(0.01).onFinishChange(updateGeometry);
             geometryFolder.add(geometryOptions, 'segments', 1, 20).name('Suavidad (Segmentos)').step(1).onFinishChange(updateGeometry);
+            
+            const colorContornoControl = geometryFolder.addColor(edgeOptions, 'color').name('Color Contorno').onChange((value) => {
+                edgesMesh.material.color.set(value);
+                shaderEdgesMesh.material.uniforms.u_edgeColor.value.set(value);
+            });
+
             geometryFolder.add(edgeOptions, 'show').name('Mostrar Contorno').onChange((value) => {
                 edgesMesh.visible = value;
+                colorContornoControl.domElement.style.pointerEvents = value ? 'auto' : 'none';
+                colorContornoControl.domElement.style.opacity = value ? 1 : 0.5;
             });
-            geometryFolder.addColor(edgeOptions, 'color').name('Color Contorno').onChange((value) => {
-                edgesMesh.material.color.set(value);
-            });
+
+            colorContornoControl.domElement.style.pointerEvents = edgeOptions.show ? 'auto' : 'none';
+            colorContornoControl.domElement.style.opacity = edgeOptions.show ? 1 : 0.5;
+            
             geometryFolder.open();
 
             const materialFolder = gui.addFolder('Material');
-            // MODIFICADO: Se inicializa la variable global.
             materialOptions = { mode: initialValues.mode };
             
             const fontSizeControl = materialFolder.add(initialValues, 'fontSize', 50, 200).name('Tamaño de la letra').step(1).onChange(() => updateMaterial(materialOptions.mode));
-            
-            letterBgColorControl = materialFolder.addColor(initialValues, 'letterBgColor').name('Fondo de Letra').onChange(() => updateMaterial(materialOptions.mode));
+            letterBgColorControl = materialFolder.addColor(initialValues, 'letterBgColor').name('Color del dado').onChange(() => updateMaterial(materialOptions.mode));
             letterTextColorControl = materialFolder.addColor(initialValues, 'letterTextColor').name('Color de Letra').onChange(() => updateMaterial(materialOptions.mode));
-            randomColorsControl = materialFolder.add(initialValues, 'randomColors').name('Colores Aleatorios').onChange((value) => {
-                letterBgColorControl.domElement.style.pointerEvents = value ? 'none' : 'auto';
-                letterBgColorControl.domElement.style.opacity = value ? 0.5 : 1;
-                letterTextColorControl.domElement.style.pointerEvents = value ? 'none' : 'auto';
-                letterTextColorControl.domElement.style.opacity = value ? 0.5 : 1;
-                updateMaterial(materialOptions.mode);
-            });
-
             initialValues.faceTexts.forEach((text, index) => {
-                const control = materialFolder.add(initialValues.faceTexts, index)
-                    .name(`Cara ${String.fromCharCode(65 + index)}`)
-                    .listen()
-                    .onChange(() => updateMaterial(materialOptions.mode))
-                    .onFinishChange((value) => {
-                        initialValues.faceTexts[index] = value.substring(0, 3).toUpperCase();
-                        updateMaterial(materialOptions.mode);
-                    });
+                const control = materialFolder.add(initialValues.faceTexts, index).name(`Cara ${String.fromCharCode(65 + index)}`).listen().onChange(() => updateMaterial(materialOptions.mode)).onFinishChange((value) => { initialValues.faceTexts[index] = value.substring(0, 3).toUpperCase(); updateMaterial(materialOptions.mode); });
                 control.domElement.querySelector('input').setAttribute('maxlength', '3');
                 faceTextInputControls.push(control);
             });
-
-            materialFolder.add(materialOptions, 'mode', ['Textura', 'Wireframe', 'Color', 'Letras']).name('Modo de Material').onChange((value) => {
-                materialOptions.mode = value;
-                const toggleLetterControls = (show) => {
-                    fontSizeControl.domElement.style.display = show ? '' : 'none';
-                    letterBgColorControl.domElement.style.display = show ? '' : 'none';
-                    letterTextColorControl.domElement.style.display = show ? '' : 'none';
-                    randomColorsControl.domElement.style.display = show ? '' : 'none';
-                    faceTextInputControls.forEach(control => {
-                        control.domElement.style.display = show ? '' : 'none';
-                    });
-                    const disableColorControls = show && initialValues.randomColors;
-                    letterBgColorControl.domElement.style.pointerEvents = disableColorControls ? 'none' : 'auto';
-                    letterBgColorControl.domElement.style.opacity = disableColorControls ? 0.5 : 1;
-                    letterTextColorControl.domElement.style.pointerEvents = disableColorControls ? 'none' : 'auto';
-                    letterTextColorControl.domElement.style.opacity = disableColorControls ? 0.5 : 1;
-                };
-                toggleLetterControls(value === 'Letras');
-                updateMaterial(value);
+            
+            const faceKeys = Object.keys(faceColorOptions);
+            faceKeys.forEach((key, index) => {
+                const control = materialFolder.addColor(faceColorOptions, key)
+                    .name(`Cara ${String.fromCharCode(65 + index)}`)
+                    .onChange(() => updateMaterial('Color'));
+                faceColorControls.push(control);
             });
             
-            const isLettersMode = initialValues.mode === 'Letras';
-            fontSizeControl.domElement.style.display = isLettersMode ? '' : 'none';
-            letterBgColorControl.domElement.style.display = isLettersMode ? '' : 'none';
-            letterTextColorControl.domElement.style.display = isLettersMode ? '' : 'none';
-            randomColorsControl.domElement.style.display = isLettersMode ? '' : 'none';
-            faceTextInputControls.forEach(control => {
-                control.domElement.style.display = isLettersMode ? '' : 'none';
+            randomColorsControl = materialFolder.add(initialValues, 'randomColors').name('Colores Aleatorios').onChange((value) => {
+                const disableFaceColorPickers = value && materialOptions.mode === 'Color';
+                faceColorControls.forEach(control => {
+                    control.domElement.style.pointerEvents = disableFaceColorPickers ? 'none' : 'auto';
+                    control.domElement.style.opacity = disableFaceColorPickers ? 0.5 : 1;
+                });
+                const disableLetterOrDiceColor = value && (materialOptions.mode === 'Letras' || materialOptions.mode === 'Caras');
+                letterBgColorControl.domElement.style.pointerEvents = disableLetterOrDiceColor ? 'none' : 'auto';
+                letterBgColorControl.domElement.style.opacity = disableLetterOrDiceColor ? 0.5 : 1;
+                
+                const disableLetterTextColor = value && materialOptions.mode === 'Letras';
+                letterTextColorControl.domElement.style.pointerEvents = disableLetterTextColor ? 'none' : 'auto';
+                letterTextColorControl.domElement.style.opacity = disableLetterTextColor ? 0.5 : 1;
+                
+                updateMaterial(materialOptions.mode);
             });
-            if (isLettersMode && initialValues.randomColors) {
-                letterBgColorControl.domElement.style.pointerEvents = 'none';
-                letterBgColorControl.domElement.style.opacity = 0.5;
-                letterTextColorControl.domElement.style.pointerEvents = 'none';
-                letterTextColorControl.domElement.style.opacity = 0.5;
+            
+            degradadoControl = materialFolder.add(materialEdgeOptions, 'gradient').name('Degradado').onChange(value => {
+                shaderEdgesMesh.visible = value;
+                if (value) startEdgeColorAnimation();
+                else stopEdgeColorAnimation();
+            });
+            
+            materialFolder.add(materialOptions, 'mode', ['Textura', 'Wireframe', 'Color', 'Letras', 'Caras']).name('Modo de Material').onChange(manageControlsVisibility);
+
+            function manageControlsVisibility(value) {
+                materialOptions.mode = value;
+                const showLetterControls = value === 'Letras';
+                const showColorControls = value === 'Color';
+                const showCarasControls = value === 'Caras';
+                const showCommonRandom = showLetterControls || showColorControls || showCarasControls;
+                const showCommonDegradado = showLetterControls || showColorControls;
+                const showDiceColor = showLetterControls || showCarasControls;
+
+                // --- 1. Control de Visibilidad ---
+                fontSizeControl.domElement.style.display = showLetterControls ? '' : 'none';
+                letterTextColorControl.domElement.style.display = showLetterControls ? '' : 'none';
+                faceTextInputControls.forEach(c => c.domElement.style.display = showLetterControls ? '' : 'none');
+                faceColorControls.forEach(c => c.domElement.style.display = showColorControls ? '' : 'none');
+                randomColorsControl.domElement.style.display = showCommonRandom ? '' : 'none';
+                degradadoControl.domElement.style.display = showCommonDegradado ? '' : 'none';
+                letterBgColorControl.domElement.style.display = showDiceColor ? '' : 'none';
+
+                // --- 2. Lógica de Estado por Modo ---
+                // Por defecto, el control de colores aleatorios está habilitado
+                randomColorsControl.domElement.style.pointerEvents = 'auto';
+                randomColorsControl.domElement.style.opacity = 1;
+
+                if (showColorControls) {
+                    initialValues.randomColors = true;
+                    randomColorsControl.updateDisplay();
+                } else if (showCarasControls) {
+                    // MODIFICADO: Predefinir color y desactivar aleatorios para el modo "Caras"
+                    initialValues.letterBgColor = '#f7e1d9'; // Color marfil
+                    letterBgColorControl.updateDisplay();
+
+                    initialValues.randomColors = false;
+                    randomColorsControl.updateDisplay();
+                    randomColorsControl.domElement.style.pointerEvents = 'none';
+                    randomColorsControl.domElement.style.opacity = 0.5;
+                }
+                
+                if(randomColorsControl) {
+                    randomColorsControl.__onChange(initialValues.randomColors);
+                }
+                updateMaterial(value);
             }
 
+            manageControlsVisibility(initialValues.mode);
             materialFolder.open();
             
-            // ... (el resto de la función setupGUI y del script permanece igual) ...
             const cubeFolder = gui.addFolder('Controles del Cubo');
             cubeFolder.add(mesh.rotation, 'x', 0, Math.PI * 2).name('Rotación X').listen();
             cubeFolder.add(mesh.rotation, 'y', 0, Math.PI * 2).name('Rotación Y').listen();
@@ -261,14 +393,170 @@
             generalFolder.add(initialValues, 'enableLogs').name('Activar Logs').onChange(value => enableLogs = value);
             generalFolder.open();
         }
+
+        function startEdgeColorAnimation() {
+            stopEdgeColorAnimation();
+            const colorHolder = { color: shaderEdgesMesh.material.uniforms.u_edgeColor.value.getStyle() };
+            const tweens = [];
+            for (let i = 0; i < currentFaceColors.length; i++) {
+                const nextColorIndex = (i + 1) % currentFaceColors.length;
+                const tween = new TWEEN.Tween(colorHolder).to({ color: currentFaceColors[nextColorIndex] }, 2000).onUpdate(() => { shaderEdgesMesh.material.uniforms.u_edgeColor.value.set(colorHolder.color); });
+                tweens.push(tween);
+            }
+            for (let i = 0; i < tweens.length - 1; i++) { tweens[i].chain(tweens[i + 1]); }
+            tweens[tweens.length - 1].chain(tweens[0]);
+            edgeColorTween = tweens[0];
+            edgeColorTween.start();
+        }
+
+        function stopEdgeColorAnimation() {
+            if (edgeColorTween) {
+                edgeColorTween.stop();
+                TWEEN.removeAll();
+                edgeColorTween = null;
+            }
+            shaderEdgesMesh.material.uniforms.u_edgeColor.value.set(edgeOptions.color);
+        }
+
         function onCubeClick(event) { if (isAnimating) return; mouse.x = (event.clientX / window.innerWidth) * 2 - 1; mouse.y = - (event.clientY / window.innerHeight) * 2 + 1; raycaster.setFromCamera(mouse, camera); const intersects = raycaster.intersectObjects([mesh]); if (intersects.length > 0) { rollDice(); } }
-        function rollDice() { isAnimating = true; isCubeMoving = false; if (activateRotationControl) { activateRotationControl.setValue(false); activateRotationControl.updateDisplay(); } const targetRotations = [ { x: 0, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: Math.PI, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: -Math.PI / 2, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: Math.PI / 2, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: 0, y: Math.PI * Math.round(Math.random() * 4), z: Math.PI / 2 }, { x: 0, y: Math.PI * Math.round(Math.random() * 4), z: -Math.PI / 2 } ]; const finalRotation = targetRotations[Math.floor(Math.random() * targetRotations.length)]; const tossHeight = 3 + Math.random() * 2; const totalDuration = 1200 + diceOptions.bounciness * 800; const tossUp = new TWEEN.Tween(mesh.position).to({ y: tossHeight }, totalDuration * 0.3).easing(TWEEN.Easing.Quadratic.Out); const randomRotation = new TWEEN.Tween(mesh.rotation).to({x: mesh.rotation.x + (Math.random() * 8 - 4) * Math.PI, y: mesh.rotation.y + (Math.random() * 8 - 4) * Math.PI, z: mesh.rotation.z + (Math.random() * 8 - 4) * Math.PI}, totalDuration).easing(TWEEN.Easing.Linear.None); const finalSettleRotation = new TWEEN.Tween(mesh.rotation).to(finalRotation, totalDuration * 0.7).easing(TWEEN.Easing.Quadratic.InOut); let fallAndBounce = new TWEEN.Tween(mesh.position).to({y: 0.5}, totalDuration * 0.15).easing(TWEEN.Easing.Quadratic.In); let lastBounceTween = fallAndBounce; let numBounces = Math.round(diceOptions.bounciness * 4); let currentBounceHeight = tossHeight * 0.4 * diceOptions.bounciness; for (let i = 0; i < numBounces; i++) { if (currentBounceHeight < 0.1) break; const bounceUp = new TWEEN.Tween(mesh.position).to({ y: 0.5 + currentBounceHeight }, totalDuration * 0.15 / (i + 1)).easing(TWEEN.Easing.Quadratic.Out); const bounceDown = new TWEEN.Tween(mesh.position).to({ y: 0.5 }, totalDuration * 0.15 / (i + 1)).easing(TWEEN.Easing.Quadratic.In); lastBounceTween.chain(bounceUp); bounceUp.chain(bounceDown); lastBounceTween = bounceDown; currentBounceHeight *= 0.5; } lastBounceTween.onComplete(() => { isAnimating = false; }); tossUp.chain(fallAndBounce); tossUp.start(); randomRotation.start(); tossUp.onComplete(() => finalSettleRotation.start()); }
+        
+        function rollDice() { 
+            if (isAnimating) return;
+            if (animationOptions.soundEnabled) {
+                try { soundToss.play(); } catch(e) { console.warn("No se pudo reproducir el sonido de lanzamiento."); }
+            }
+
+            isAnimating = true; isCubeMoving = false; 
+            if (activateRotationControl) { activateRotationControl.setValue(false); activateRotationControl.updateDisplay(); } 
+
+            const targetRotations = [ { x: 0, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: Math.PI, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: -Math.PI / 2, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: Math.PI / 2, y: Math.PI * Math.round(Math.random() * 4), z: 0 }, { x: 0, y: Math.PI * Math.round(Math.random() * 4), z: Math.PI / 2 }, { x: 0, y: Math.PI * Math.round(Math.random() * 4), z: -Math.PI / 2 } ]; 
+            const finalRotation = targetRotations[Math.floor(Math.random() * targetRotations.length)]; 
+            
+            const tossHeight = animationOptions.tossHeight;
+            const totalDuration = (1200 + diceOptions.bounciness * 800) / animationOptions.speed;
+            const spin = animationOptions.spinIntensity;
+
+            const tossUp = new TWEEN.Tween(mesh.position).to({ y: tossHeight }, totalDuration * 0.3).easing(TWEEN.Easing.Quadratic.Out); 
+            const randomRotation = new TWEEN.Tween(mesh.rotation).to({
+                x: mesh.rotation.x + (Math.random() * spin - spin/2) * Math.PI, 
+                y: mesh.rotation.y + (Math.random() * spin - spin/2) * Math.PI, 
+                z: mesh.rotation.z + (Math.random() * spin - spin/2) * Math.PI
+            }, totalDuration).easing(TWEEN.Easing.Linear.None); 
+            
+            const finalSettleRotation = new TWEEN.Tween(mesh.rotation).to(finalRotation, totalDuration * 0.7).easing(TWEEN.Easing.Quadratic.InOut); 
+            
+            let fallAndBounce = new TWEEN.Tween(mesh.position).to({y: 0.5}, totalDuration * 0.15).easing(TWEEN.Easing.Quadratic.In)
+                .onStart(() => {
+                    if (animationOptions.soundEnabled) {
+                        try { soundImpact.play(); } catch(e) { console.warn("No se pudo reproducir el sonido de impacto."); }
+                    }
+                });
+
+            let lastBounceTween = fallAndBounce; 
+            let numBounces = Math.round(diceOptions.bounciness * 4); 
+            let currentBounceHeight = tossHeight * 0.4 * diceOptions.bounciness; 
+            for (let i = 0; i < numBounces; i++) { 
+                if (currentBounceHeight < 0.1) break; 
+                const bounceUp = new TWEEN.Tween(mesh.position).to({ y: 0.5 + currentBounceHeight }, totalDuration * 0.15 / (i + 1)).easing(TWEEN.Easing.Quadratic.Out); 
+                const bounceDown = new TWEEN.Tween(mesh.position).to({ y: 0.5 }, totalDuration * 0.15 / (i + 1)).easing(TWEEN.Easing.Quadratic.In); 
+                lastBounceTween.chain(bounceUp); 
+                bounceUp.chain(bounceDown); 
+                lastBounceTween = bounceDown; 
+                currentBounceHeight *= 0.5; 
+            } 
+            
+            lastBounceTween.onComplete(() => { isAnimating = false; }); 
+            tossUp.chain(fallAndBounce); 
+            tossUp.start(); 
+            randomRotation.start(); 
+            tossUp.onComplete(() => finalSettleRotation.start()); 
+        }
+
         function resetCube() { mesh.rotation.set(initialValues.cubeRotation.x, initialValues.cubeRotation.y, initialValues.cubeRotation.z); mesh.position.set(initialValues.cubePosition.x, initialValues.cubePosition.y, initialValues.cubePosition.z); camera.position.set(0, 0, initialValues.zoom); }
         function toggleAxes(value) { axesHelper.visible = value; }
         function toggleControls(value) { controls.enabled = value; }
-        function updateMaterial(mode) { if (mode === 'Wireframe') { mesh.material = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true }); } else if (mode === 'Color') { const colors = []; for (let i = 0; i < geometry.attributes.position.count; i++) { colors.push(Math.random(), Math.random(), Math.random()); } geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3)); mesh.material = new THREE.MeshBasicMaterial({ vertexColors: true }); } else if (mode === 'Letras') { const faceTextures = initialValues.faceTexts.map((text, index) => { let bgColor = initialValues.letterBgColor; let textColor = initialValues.letterTextColor; if (initialValues.randomColors) { bgColor = getRandomHexColor(); textColor = getRandomHexColor(); if (bgColor === textColor) textColor = getRandomHexColor(); } return createTextTexture(text, initialValues.fontSize, bgColor, textColor); }); mesh.material = faceTextures.map(tex => new THREE.MeshBasicMaterial({ map: tex })); } else { mesh.material = new THREE.MeshBasicMaterial({ map: texture }); } }
+        
+        function updateMaterial(mode) { 
+            if (Array.isArray(mesh.material)) {
+                mesh.material.forEach(m => {
+                    if (m.map) m.map.dispose();
+                    m.dispose();
+                });
+            }
+
+            if (mode === 'Wireframe') { 
+                mesh.material = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true }); 
+            } else if (mode === 'Color') {
+                if (initialValues.randomColors) {
+                    for (let i = 0; i < 6; i++) { currentFaceColors[i] = getRandomHexColor(); }
+                    mesh.material = currentFaceColors.map(c => new THREE.MeshBasicMaterial({ color: c }));
+                } else {
+                    const faceMaterials = Object.values(faceColorOptions).map(c => new THREE.MeshBasicMaterial({ color: c }));
+                    mesh.material = faceMaterials;
+                    currentFaceColors = Object.values(faceColorOptions);
+                }
+            } else if (mode === 'Letras') { 
+                const faceTextures = initialValues.faceTexts.map((text, index) => { 
+                    let bgColor = initialValues.letterBgColor; 
+                    let textColor = initialValues.letterTextColor; 
+                    if (initialValues.randomColors) { 
+                        bgColor = getRandomHexColor(); 
+                        textColor = getContrastColor(bgColor); 
+                    } 
+                    currentFaceColors[index] = bgColor;
+                    return createTextTexture(text, initialValues.fontSize, bgColor, textColor); 
+                }); 
+                mesh.material = faceTextures.map(tex => new THREE.MeshBasicMaterial({ map: tex })); 
+            } else if (mode === 'Caras') {
+                const faceTexturesPaths = [
+                    'textures/dice1.png', 'textures/dice2.png', 'textures/dice3.png',
+                    'textures/dice4.png', 'textures/dice5.png', 'textures/dice6.png'
+                ];
+                
+                const materials = [];
+                mesh.material = materials;
+                
+                let loadedCount = 0;
+                faceTexturesPaths.forEach((path, index) => {
+                    const bgColor = initialValues.randomColors ? getRandomHexColor() : initialValues.letterBgColor;
+                    
+                    createDiceCanvasTexture(path, bgColor, (canvasTexture) => {
+                        canvasTexture.colorSpace = THREE.SRGBColorSpace;
+                        const material = new THREE.MeshBasicMaterial({ map: canvasTexture });
+                        materials[index] = material;
+                        loadedCount++;
+                        if (loadedCount === 6) {
+                            mesh.material = materials;
+                        }
+                    });
+                });
+
+            } else { 
+                const texture = textureLoader.load('textures/crate.gif');
+                texture.colorSpace = THREE.SRGBColorSpace;
+                mesh.material = new THREE.MeshBasicMaterial({ map: texture }); 
+            } 
+            
+            if (materialEdgeOptions.gradient) {
+                startEdgeColorAnimation();
+            }
+        }
+
         function onWindowResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }
-        function animate() { requestAnimationFrame(animate); TWEEN.update(); if (isCubeMoving && !isAnimating) { mesh.rotation.y += 0.04; } controls.update(); renderer.render(scene, camera); }
+        
+        function animate() { 
+            requestAnimationFrame(animate); 
+            TWEEN.update(); 
+            
+            if (shaderEdgesMesh.visible) {
+                shaderEdgesMesh.material.uniforms.u_time.value += 0.02;
+            }
+            if (isCubeMoving && !isAnimating) { 
+                mesh.rotation.y += 0.04; 
+            } 
+            controls.update(); 
+            renderer.render(scene, camera); 
+        }
 
     </script>
 </body>

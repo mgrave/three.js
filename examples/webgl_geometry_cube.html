@@ -98,6 +98,9 @@
         const soundToss = new Audio('sounds/toss.mp3');
         const soundImpact = new Audio('sounds/impact.mp3');
 
+        // MODIFICADO: Se establece el estado inicial de los ejes a 'false'.
+        const axesOptions = { showAxes: false };
+
         init();
         animate();
 
@@ -159,6 +162,8 @@
             updateMaterial(initialValues.mode);
 
             axesHelper = new THREE.AxesHelper(5);
+            // MODIFICADO: Se establece la visibilidad inicial de los ejes para que coincida con la GUI.
+            axesHelper.visible = axesOptions.showAxes;
             scene.add(axesHelper);
 
             const planeGeometry = new THREE.PlaneGeometry(20, 20);
@@ -253,14 +258,25 @@
 
         function setupGUI() {
             const gui = new GUI();
+
+            // MODIFICADO: Se añade un encabezado al panel de la GUI.
+            const titleElement = document.createElement('div');
+            titleElement.textContent = 'DICE';
+            titleElement.style.color = '#eee';
+            titleElement.style.backgroundColor = '#000';
+            titleElement.style.padding = '10px 15px';
+            titleElement.style.fontWeight = 'bold';
+            titleElement.style.fontSize = '1em';
+            titleElement.style.letterSpacing = '0.1em';
+            gui.domElement.prepend(titleElement);
+
+
             const diceFolder = gui.addFolder('Animación del Dado');
             diceFolder.add(diceOptions, 'bounciness', 0, 1).name('Rebote (Bounciness)').step(0.01);
             diceFolder.add(animationOptions, 'tossHeight', 1, 10).name('Altura Lanzamiento');
             diceFolder.add(animationOptions, 'speed', 0.5, 2).name('Velocidad');
             diceFolder.add(animationOptions, 'spinIntensity', 0, 20).name('Intensidad de Giro');
             diceFolder.add(animationOptions, 'soundEnabled').name('Activar Sonido');
-            
-            diceFolder.open();
             
             const geometryFolder = gui.addFolder('Geometría del Dado');
             geometryFolder.add(geometryOptions, 'radius', 0, 0.5).name('Curvatura (Radio)').step(0.01).onFinishChange(updateGeometry);
@@ -280,17 +296,24 @@
             colorContornoControl.domElement.style.pointerEvents = edgeOptions.show ? 'auto' : 'none';
             colorContornoControl.domElement.style.opacity = edgeOptions.show ? 1 : 0.5;
             
-            geometryFolder.open();
-
             const materialFolder = gui.addFolder('Material');
             materialOptions = { mode: initialValues.mode };
             
             const fontSizeControl = materialFolder.add(initialValues, 'fontSize', 50, 200).name('Tamaño de la letra').step(1).onChange(() => updateMaterial(materialOptions.mode));
             letterBgColorControl = materialFolder.addColor(initialValues, 'letterBgColor').name('Color del dado').onChange(() => updateMaterial(materialOptions.mode));
             letterTextColorControl = materialFolder.addColor(initialValues, 'letterTextColor').name('Color de Letra').onChange(() => updateMaterial(materialOptions.mode));
+            
             initialValues.faceTexts.forEach((text, index) => {
-                const control = materialFolder.add(initialValues.faceTexts, index).name(`Cara ${String.fromCharCode(65 + index)}`).listen().onChange(() => updateMaterial(materialOptions.mode)).onFinishChange((value) => { initialValues.faceTexts[index] = value.substring(0, 3).toUpperCase(); updateMaterial(materialOptions.mode); });
-                control.domElement.querySelector('input').setAttribute('maxlength', '3');
+                // MODIFICADO: Se cambia la etiqueta y el límite de caracteres.
+                const control = materialFolder.add(initialValues.faceTexts, index)
+                    .name(`Texto ${String.fromCharCode(65 + index)}`)
+                    .listen()
+                    .onChange(() => updateMaterial(materialOptions.mode))
+                    .onFinishChange((value) => { 
+                        initialValues.faceTexts[index] = value.substring(0, 6).toUpperCase(); 
+                        updateMaterial(materialOptions.mode);
+                    });
+                control.domElement.querySelector('input').setAttribute('maxlength', '6');
                 faceTextInputControls.push(control);
             });
             
@@ -336,7 +359,6 @@
                 const showCommonDegradado = showLetterControls || showColorControls;
                 const showDiceColor = showLetterControls || showCarasControls;
 
-                // --- 1. Control de Visibilidad ---
                 fontSizeControl.domElement.style.display = showLetterControls ? '' : 'none';
                 letterTextColorControl.domElement.style.display = showLetterControls ? '' : 'none';
                 faceTextInputControls.forEach(c => c.domElement.style.display = showLetterControls ? '' : 'none');
@@ -345,8 +367,6 @@
                 degradadoControl.domElement.style.display = showCommonDegradado ? '' : 'none';
                 letterBgColorControl.domElement.style.display = showDiceColor ? '' : 'none';
 
-                // --- 2. Lógica de Estado por Modo ---
-                // Por defecto, el control de colores aleatorios está habilitado
                 randomColorsControl.domElement.style.pointerEvents = 'auto';
                 randomColorsControl.domElement.style.opacity = 1;
 
@@ -354,10 +374,8 @@
                     initialValues.randomColors = true;
                     randomColorsControl.updateDisplay();
                 } else if (showCarasControls) {
-                    // MODIFICADO: Predefinir color y desactivar aleatorios para el modo "Caras"
-                    initialValues.letterBgColor = '#f7e1d9'; // Color marfil
+                    initialValues.letterBgColor = '#f7e1d9';
                     letterBgColorControl.updateDisplay();
-
                     initialValues.randomColors = false;
                     randomColorsControl.updateDisplay();
                     randomColorsControl.domElement.style.pointerEvents = 'none';
@@ -371,7 +389,6 @@
             }
 
             manageControlsVisibility(initialValues.mode);
-            materialFolder.open();
             
             const cubeFolder = gui.addFolder('Controles del Cubo');
             cubeFolder.add(mesh.rotation, 'x', 0, Math.PI * 2).name('Rotación X').listen();
@@ -380,18 +397,23 @@
             cubeFolder.add(mesh.position, 'x', -10, 10).name('Mover X').listen();
             cubeFolder.add(mesh.position, 'y', -10, 10).name('Mover Y').listen();
             cubeFolder.add(mesh.position, 'z', -10, 10).name('Mover Z').listen();
-            cubeFolder.open();
+            
             const generalFolder = gui.addFolder('General');
             const movementOptions = { moveCube: initialValues.moveCube };
             activateRotationControl = generalFolder.add(movementOptions, 'moveCube').name('Activar Rotación Auto.').onChange((value) => { isCubeMoving = value; });
             generalFolder.add(camera.position, 'z', 0.1, 10).name('Zoom').step(0.1);
             generalFolder.add({ reset: resetCube }, 'reset').name('Resetear Cubo');
-            const axesOptions = { showAxes: true };
             generalFolder.add(axesOptions, 'showAxes').name('Mostrar Ejes').onChange(toggleAxes);
             const controlsOptions = { enableControls: true };
             generalFolder.add(controlsOptions, 'enableControls').name('Habilitar Controles').onChange(toggleControls);
             generalFolder.add(initialValues, 'enableLogs').name('Activar Logs').onChange(value => enableLogs = value);
-            generalFolder.open();
+
+            // MODIFICADO: Se cierran todas las carpetas por defecto.
+            diceFolder.close();
+            geometryFolder.close();
+            materialFolder.close();
+            cubeFolder.close();
+            generalFolder.close();
         }
 
         function startEdgeColorAnimation() {
